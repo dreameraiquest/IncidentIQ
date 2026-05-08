@@ -1,0 +1,460 @@
+[
+  {
+    "case_id": "DB_POOL",
+    "raw_file": "raw_logs/quick_mixed_window_01.jsonl",
+    "expected_category": "Database",
+    "expected_severity": "P1",
+    "affected_services": [
+      "payment-api",
+      "postgres-primary"
+    ],
+    "expected_evidence_terms": [
+      [
+        "HikariPool-1",
+        "-",
+        "Connection",
+        "is",
+        "not"
+      ],
+      [
+        "FATAL:",
+        "remaining",
+        "connection",
+        "slots",
+        "are"
+      ],
+      [
+        "SQLTransientConnectionException:",
+        "timeout",
+        "acquiring",
+        "JDBC",
+        "connection"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "AUTH_JWT",
+    "raw_file": "raw_logs/quick_mixed_window_01.jsonl",
+    "expected_category": "Authentication",
+    "expected_severity": "P2",
+    "affected_services": [
+      "auth-service",
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      [
+        "JWT",
+        "validation",
+        "failed:",
+        "issuer",
+        "mismatch"
+      ],
+      [
+        "invalid",
+        "token",
+        "signature",
+        "kid=prod-key-17"
+      ],
+      [
+        "audience",
+        "claim",
+        "does",
+        "not",
+        "match"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "API_504",
+    "raw_file": "raw_logs/quick_mixed_window_01.jsonl",
+    "expected_category": "API timeout",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "risk-engine"
+    ],
+    "expected_evidence_terms": [
+      [
+        "upstream",
+        "timed",
+        "out",
+        "while",
+        "reading"
+      ],
+      [
+        "HTTP",
+        "504",
+        "generated",
+        "for",
+        "/api/risk/check"
+      ],
+      [
+        "gateway",
+        "timeout",
+        "after",
+        "60000",
+        "ms"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "MEM_OOM",
+    "raw_file": "raw_logs/quick_mixed_window_02.jsonl",
+    "expected_category": "Memory/CPU",
+    "expected_severity": "P1",
+    "affected_services": [
+      "market-data-consumer",
+      "kubelet"
+    ],
+    "expected_evidence_terms": [
+      [
+        "Container",
+        "market-data-consumer",
+        "was",
+        "OOMKilled"
+      ],
+      [
+        "heap",
+        "usage",
+        "reached",
+        "97",
+        "percent"
+      ],
+      [
+        "Back-off",
+        "restarting",
+        "failed",
+        "container"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "QUEUE_LAG",
+    "raw_file": "raw_logs/quick_mixed_window_02.jsonl",
+    "expected_category": "Queue backlog",
+    "expected_severity": "P2",
+    "affected_services": [
+      "market-data-consumer",
+      "kafka-broker"
+    ],
+    "expected_evidence_terms": [
+      [
+        "consumer",
+        "lag",
+        "above",
+        "threshold",
+        "topic=market_ticks"
+      ],
+      [
+        "records-lag-max",
+        "increased",
+        "beyond",
+        "alert",
+        "threshold"
+      ],
+      [
+        "consumer",
+        "processing",
+        "slower",
+        "than",
+        "ingress"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DISK_FULL",
+    "raw_file": "raw_logs/quick_mixed_window_02.jsonl",
+    "expected_category": "Disk/storage",
+    "expected_severity": "P1",
+    "affected_services": [
+      "order-api",
+      "kubelet",
+      "node-agent"
+    ],
+    "expected_evidence_terms": [
+      [
+        "write",
+        "/var/log/app/current.log:",
+        "no",
+        "space",
+        "left"
+      ],
+      [
+        "NodeHasDiskPressure",
+        "kubelet",
+        "condition",
+        "true"
+      ],
+      [
+        "failed",
+        "to",
+        "write",
+        "checkpoint",
+        "file"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DEPLOY_ERROR",
+    "raw_file": "raw_logs/quick_mixed_window_03.jsonl",
+    "expected_category": "Deployment regression",
+    "expected_severity": "P1",
+    "affected_services": [
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      [
+        "rollout",
+        "started",
+        "deployment/payment-api",
+        "image=payment-api:2.8.1"
+      ],
+      [
+        "new",
+        "error",
+        "signature",
+        "observed",
+        "only"
+      ],
+      [
+        "5xx",
+        "rate",
+        "increased",
+        "after",
+        "rollout"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "EXT_PAY",
+    "raw_file": "raw_logs/quick_mixed_window_03.jsonl",
+    "expected_category": "External dependency",
+    "expected_severity": "P2",
+    "affected_services": [
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      [
+        "payment",
+        "provider",
+        "returned",
+        "HTTP",
+        "503"
+      ],
+      [
+        "external",
+        "authorize",
+        "call",
+        "failed",
+        "provider=StripeMock"
+      ],
+      [
+        "vendor",
+        "status",
+        "degraded",
+        "for",
+        "payments"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "UNK_STATE",
+    "raw_file": "raw_logs/quick_mixed_window_03.jsonl",
+    "expected_category": "Unknown",
+    "expected_severity": "P3",
+    "affected_services": [
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      [
+        "unexpected",
+        "state",
+        "transition",
+        "from",
+        "AUTHORIZED"
+      ],
+      [
+        "missing",
+        "transition",
+        "rule",
+        "for",
+        "current"
+      ],
+      [
+        "trace",
+        "ended",
+        "before",
+        "downstream",
+        "acknowledgement"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "NET_RESET",
+    "raw_file": "raw_logs/quick_mixed_window_04.jsonl",
+    "expected_category": "Network",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      [
+        "upstream",
+        "prematurely",
+        "closed",
+        "connection",
+        "while"
+      ],
+      [
+        "recv()",
+        "failed",
+        "(104:",
+        "Connection",
+        "reset"
+      ],
+      [
+        "upstream",
+        "connect",
+        "error",
+        "or",
+        "disconnect/reset"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "QUEUE_POISON",
+    "raw_file": "raw_logs/quick_mixed_window_04.jsonl",
+    "expected_category": "Queue backlog",
+    "expected_severity": "P2",
+    "affected_services": [
+      "notification-worker",
+      "kafka-broker"
+    ],
+    "expected_evidence_terms": [
+      [
+        "message",
+        "failed",
+        "processing;",
+        "sending",
+        "to"
+      ],
+      [
+        "same",
+        "message",
+        "retried",
+        "25",
+        "times"
+      ],
+      [
+        "poison",
+        "payload",
+        "suspected",
+        "schemaVersion=unknown"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "UNK_CORR",
+    "raw_file": "raw_logs/quick_mixed_window_04.jsonl",
+    "expected_category": "Unknown",
+    "expected_severity": "P3",
+    "affected_services": [
+      "notification-worker"
+    ],
+    "expected_evidence_terms": [
+      [
+        "missing",
+        "correlation",
+        "id;",
+        "cannot",
+        "link"
+      ],
+      [
+        "trace",
+        "context",
+        "header",
+        "absent"
+      ],
+      [
+        "span",
+        "dropped",
+        "due",
+        "to",
+        "invalid"
+      ]
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  }
+]

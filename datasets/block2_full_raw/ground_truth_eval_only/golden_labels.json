@@ -1,0 +1,620 @@
+[
+  {
+    "case_id": "DB_POOL",
+    "raw_file": "raw_logs/full_mixed_window_01.jsonl",
+    "expected_category": "Database",
+    "expected_severity": "P1",
+    "affected_services": [
+      "payment-api",
+      "postgres-primary"
+    ],
+    "expected_evidence_terms": [
+      "HikariPool-1 - Connection is not available, request timed out after 30000ms",
+      "FATAL: remaining connection slots are reserved for non-replication superuser connections",
+      "SQLTransientConnectionException: timeout acquiring JDBC connection"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DB_DEADLOCK",
+    "raw_file": "raw_logs/full_mixed_window_01.jsonl",
+    "expected_category": "Database",
+    "expected_severity": "P2",
+    "affected_services": [
+      "trade-booking-service",
+      "postgres-primary"
+    ],
+    "expected_evidence_terms": [
+      "ERROR: deadlock detected",
+      "Process waits for ShareLock on transaction; blocked by another process",
+      "could not serialize access due to concurrent update"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DB_SLOW_QUERY",
+    "raw_file": "raw_logs/full_mixed_window_01.jsonl",
+    "expected_category": "Database",
+    "expected_severity": "P2",
+    "affected_services": [
+      "order-api",
+      "postgres-primary"
+    ],
+    "expected_evidence_terms": [
+      "duration: 18429.233 ms execute SELECT orders join allocations",
+      "slow query threshold exceeded query_hash=q_4f91a",
+      "temporary file size exceeded work_mem"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "NET_RESET",
+    "raw_file": "raw_logs/full_mixed_window_02.jsonl",
+    "expected_category": "Network",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      "upstream prematurely closed connection while reading response header",
+      "recv() failed (104: Connection reset by peer)",
+      "upstream connect error or disconnect/reset before headers"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "NET_DNS",
+    "raw_file": "raw_logs/full_mixed_window_02.jsonl",
+    "expected_category": "Network",
+    "expected_severity": "P2",
+    "affected_services": [
+      "risk-engine",
+      "kube-dns"
+    ],
+    "expected_evidence_terms": [
+      "lookup pricing-service.default.svc.cluster.local on 10.96.0.10: no such host",
+      "Temporary failure in name resolution",
+      "CoreDNS query timeout for internal service"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "NET_TLS",
+    "raw_file": "raw_logs/full_mixed_window_02.jsonl",
+    "expected_category": "Network",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "auth-service"
+    ],
+    "expected_evidence_terms": [
+      "TLS handshake timeout",
+      "certificate verify failed: unable to get local issuer certificate",
+      "ssl handshake failed while connecting to upstream"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "AUTH_JWT",
+    "raw_file": "raw_logs/full_mixed_window_03.jsonl",
+    "expected_category": "Authentication",
+    "expected_severity": "P2",
+    "affected_services": [
+      "auth-service",
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      "JWT validation failed: issuer mismatch",
+      "invalid token signature kid=prod-key-17",
+      "audience claim does not match configured client"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "AUTH_JWK",
+    "raw_file": "raw_logs/full_mixed_window_03.jsonl",
+    "expected_category": "Authentication",
+    "expected_severity": "P2",
+    "affected_services": [
+      "auth-service"
+    ],
+    "expected_evidence_terms": [
+      "failed to refresh JWK set from identity provider",
+      "kid not found in cached signing keys",
+      "metadata endpoint returned 503"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "AUTH_RBAC",
+    "raw_file": "raw_logs/full_mixed_window_03.jsonl",
+    "expected_category": "Authentication",
+    "expected_severity": "P3",
+    "affected_services": [
+      "auth-service",
+      "admin-ui"
+    ],
+    "expected_evidence_terms": [
+      "policy decision deny role=ops resource=incident:write",
+      "RBAC evaluation returned deny for previously allowed action",
+      "permission matrix cache version mismatch"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "CPU_THROTTLE",
+    "raw_file": "raw_logs/full_mixed_window_04.jsonl",
+    "expected_category": "Memory/CPU",
+    "expected_severity": "P2",
+    "affected_services": [
+      "risk-engine"
+    ],
+    "expected_evidence_terms": [
+      "container_cpu_cfs_throttled_periods_total increased sharply",
+      "CPU throttling above 38 percent over 5m window",
+      "request queue waiting for worker thread"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "MEM_OOM",
+    "raw_file": "raw_logs/full_mixed_window_04.jsonl",
+    "expected_category": "Memory/CPU",
+    "expected_severity": "P1",
+    "affected_services": [
+      "market-data-consumer",
+      "kubelet"
+    ],
+    "expected_evidence_terms": [
+      "Container market-data-consumer was OOMKilled",
+      "heap usage reached 97 percent before restart",
+      "Back-off restarting failed container"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "GC_PAUSE",
+    "raw_file": "raw_logs/full_mixed_window_04.jsonl",
+    "expected_category": "Memory/CPU",
+    "expected_severity": "P2",
+    "affected_services": [
+      "pricing-service"
+    ],
+    "expected_evidence_terms": [
+      "GC pause took 4212ms, allocation failure",
+      "OldGen usage above threshold",
+      "stop-the-world pause exceeded latency SLO"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DEPLOY_ERROR",
+    "raw_file": "raw_logs/full_mixed_window_05.jsonl",
+    "expected_category": "Deployment regression",
+    "expected_severity": "P1",
+    "affected_services": [
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      "rollout started deployment/payment-api image=payment-api:2.8.1",
+      "new error signature observed only on version 2.8.1",
+      "5xx rate increased after rollout"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DEPLOY_FEATURE",
+    "raw_file": "raw_logs/full_mixed_window_05.jsonl",
+    "expected_category": "Deployment regression",
+    "expected_severity": "P2",
+    "affected_services": [
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      "feature flag strict-order-validation enabled",
+      "validation path rejected valid order payload",
+      "new code path triggered exception IllegalStateException"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DEPLOY_CONFIG",
+    "raw_file": "raw_logs/full_mixed_window_05.jsonl",
+    "expected_category": "Deployment regression",
+    "expected_severity": "P2",
+    "affected_services": [
+      "notification-worker"
+    ],
+    "expected_evidence_terms": [
+      "configuration reloaded from configmap notification-worker-v17",
+      "missing required property smtp.connection.timeout",
+      "worker failed after config reload"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "API_504",
+    "raw_file": "raw_logs/full_mixed_window_06.jsonl",
+    "expected_category": "API timeout",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "risk-engine"
+    ],
+    "expected_evidence_terms": [
+      "upstream timed out while reading response header from upstream",
+      "HTTP 504 generated for /api/risk/check",
+      "gateway timeout after 60000 ms"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "API_P95",
+    "raw_file": "raw_logs/full_mixed_window_06.jsonl",
+    "expected_category": "API timeout",
+    "expected_severity": "P2",
+    "affected_services": [
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      "p95 latency breached 2500ms for /api/payments/authorize",
+      "request timed out after 15000ms",
+      "slow response from authorize endpoint"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "API_CIRCUIT",
+    "raw_file": "raw_logs/full_mixed_window_06.jsonl",
+    "expected_category": "API timeout",
+    "expected_severity": "P2",
+    "affected_services": [
+      "order-api",
+      "pricing-service"
+    ],
+    "expected_evidence_terms": [
+      "circuit breaker opened for pricing-service",
+      "half-open probe failed dependency=pricing-service",
+      "fallback response returned due to downstream timeout"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "QUEUE_LAG",
+    "raw_file": "raw_logs/full_mixed_window_07.jsonl",
+    "expected_category": "Queue backlog",
+    "expected_severity": "P2",
+    "affected_services": [
+      "market-data-consumer",
+      "kafka-broker"
+    ],
+    "expected_evidence_terms": [
+      "consumer lag above threshold topic=market_ticks partition=7",
+      "records-lag-max increased beyond alert threshold",
+      "consumer processing slower than ingress rate"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "QUEUE_POISON",
+    "raw_file": "raw_logs/full_mixed_window_07.jsonl",
+    "expected_category": "Queue backlog",
+    "expected_severity": "P2",
+    "affected_services": [
+      "notification-worker",
+      "kafka-broker"
+    ],
+    "expected_evidence_terms": [
+      "message failed processing; sending to retry topic",
+      "same message retried 25 times",
+      "poison payload suspected schemaVersion=unknown"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "QUEUE_REBALANCE",
+    "raw_file": "raw_logs/full_mixed_window_07.jsonl",
+    "expected_category": "Queue backlog",
+    "expected_severity": "P3",
+    "affected_services": [
+      "trade-booking-service",
+      "kafka-broker"
+    ],
+    "expected_evidence_terms": [
+      "consumer group rebalance started",
+      "member heartbeat failed session timeout",
+      "partition assignment revoked repeatedly"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "DISK_FULL",
+    "raw_file": "raw_logs/full_mixed_window_08.jsonl",
+    "expected_category": "Disk/storage",
+    "expected_severity": "P1",
+    "affected_services": [
+      "order-api",
+      "kubelet",
+      "node-agent"
+    ],
+    "expected_evidence_terms": [
+      "write /var/log/app/current.log: no space left on device",
+      "NodeHasDiskPressure kubelet condition true",
+      "failed to write checkpoint file errno=28"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "DISK_ROTATE",
+    "raw_file": "raw_logs/full_mixed_window_08.jsonl",
+    "expected_category": "Disk/storage",
+    "expected_severity": "P2",
+    "affected_services": [
+      "nginx-gateway",
+      "node-agent"
+    ],
+    "expected_evidence_terms": [
+      "logrotate failed: destination disk full",
+      "access.log grew beyond expected size",
+      "compress old log failed no space left on device"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "STORAGE_IO",
+    "raw_file": "raw_logs/full_mixed_window_08.jsonl",
+    "expected_category": "Disk/storage",
+    "expected_severity": "P2",
+    "affected_services": [
+      "postgres-primary"
+    ],
+    "expected_evidence_terms": [
+      "iowait above threshold",
+      "fsync latency exceeded 2500ms",
+      "persistent volume write latency high"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "EXT_PAY",
+    "raw_file": "raw_logs/full_mixed_window_09.jsonl",
+    "expected_category": "External dependency",
+    "expected_severity": "P2",
+    "affected_services": [
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      "payment provider returned HTTP 503",
+      "external authorize call failed provider=StripeMock",
+      "vendor status degraded for payments"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "EXT_RATE",
+    "raw_file": "raw_logs/full_mixed_window_09.jsonl",
+    "expected_category": "External dependency",
+    "expected_severity": "P3",
+    "affected_services": [
+      "notification-worker"
+    ],
+    "expected_evidence_terms": [
+      "SMS provider returned HTTP 429 rate limit exceeded",
+      "vendor quota exceeded for message batch",
+      "Retry-After header received from external provider"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "EXT_MD",
+    "raw_file": "raw_logs/full_mixed_window_09.jsonl",
+    "expected_category": "External dependency",
+    "expected_severity": "P2",
+    "affected_services": [
+      "market-data-consumer"
+    ],
+    "expected_evidence_terms": [
+      "market data vendor feed delayed by 120 seconds",
+      "external feed heartbeat missed",
+      "stale quote detected from vendor stream"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": true,
+      "notify": true,
+      "human_approval_required": true
+    }
+  },
+  {
+    "case_id": "UNK_STATE",
+    "raw_file": "raw_logs/full_mixed_window_10.jsonl",
+    "expected_category": "Unknown",
+    "expected_severity": "P3",
+    "affected_services": [
+      "order-api"
+    ],
+    "expected_evidence_terms": [
+      "unexpected state transition from AUTHORIZED to UNKNOWN",
+      "missing transition rule for current workflow state",
+      "trace ended before downstream acknowledgement"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "UNK_NOISE",
+    "raw_file": "raw_logs/full_mixed_window_10.jsonl",
+    "expected_category": "Unknown",
+    "expected_severity": "P3",
+    "affected_services": [
+      "risk-engine",
+      "payment-api"
+    ],
+    "expected_evidence_terms": [
+      "RuntimeError: unexpected null reference in enrichment stage",
+      "unclassified exception emitted without error code",
+      "sporadic failure below alert threshold"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  },
+  {
+    "case_id": "UNK_CORR",
+    "raw_file": "raw_logs/full_mixed_window_10.jsonl",
+    "expected_category": "Unknown",
+    "expected_severity": "P3",
+    "affected_services": [
+      "notification-worker"
+    ],
+    "expected_evidence_terms": [
+      "missing correlation id; cannot link message to request",
+      "trace context header absent",
+      "span dropped due to invalid parent id"
+    ],
+    "expected_behavior": {
+      "infer_without_labels": true,
+      "create_ticket": false,
+      "notify": false,
+      "human_approval_required": false
+    }
+  }
+]

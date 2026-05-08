@@ -1,0 +1,19 @@
+{
+  "title": "Block 1 - Quick Raw Mixed DevOps Logs",
+  "raw_log_files": [
+    "raw_logs/quick_mixed_window_01.jsonl",
+    "raw_logs/quick_mixed_window_02.jsonl",
+    "raw_logs/quick_mixed_window_03.jsonl",
+    "raw_logs/quick_mixed_window_04.jsonl"
+  ],
+  "raw_logs_are_blind": true,
+  "raw_logs_exclude_fields": [
+    "scenario_id",
+    "scenario_name",
+    "category_hint",
+    "severity_hint",
+    "expected_category"
+  ],
+  "ground_truth_location": "ground_truth_eval_only/",
+  "recommended_use": "Use raw_logs as LangGraph input. Use ground_truth_eval_only only after model output for offline eval."
+}

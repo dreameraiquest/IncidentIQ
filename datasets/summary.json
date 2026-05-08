@@ -1,0 +1,12 @@
+{
+  "block1": {
+    "raw_files": 4,
+    "raw_log_lines": 2600,
+    "incident_cases_in_ground_truth": 12
+  },
+  "block2": {
+    "raw_files": 10,
+    "raw_log_lines": 10463,
+    "incident_cases_in_ground_truth": 30
+  }
+}

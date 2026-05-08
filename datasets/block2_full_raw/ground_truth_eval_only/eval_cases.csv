@@ -1,0 +1,31 @@
+case_id,raw_file,expected_category,expected_severity,affected_services,note
+DB_POOL,raw_logs/full_mixed_window_01.jsonl,Database,P1,payment-api|postgres-primary,raw logs contain no labels; use this only for offline eval
+DB_DEADLOCK,raw_logs/full_mixed_window_01.jsonl,Database,P2,trade-booking-service|postgres-primary,raw logs contain no labels; use this only for offline eval
+DB_SLOW_QUERY,raw_logs/full_mixed_window_01.jsonl,Database,P2,order-api|postgres-primary,raw logs contain no labels; use this only for offline eval
+NET_RESET,raw_logs/full_mixed_window_02.jsonl,Network,P2,nginx-gateway|order-api,raw logs contain no labels; use this only for offline eval
+NET_DNS,raw_logs/full_mixed_window_02.jsonl,Network,P2,risk-engine|kube-dns,raw logs contain no labels; use this only for offline eval
+NET_TLS,raw_logs/full_mixed_window_02.jsonl,Network,P2,nginx-gateway|auth-service,raw logs contain no labels; use this only for offline eval
+AUTH_JWT,raw_logs/full_mixed_window_03.jsonl,Authentication,P2,auth-service|order-api,raw logs contain no labels; use this only for offline eval
+AUTH_JWK,raw_logs/full_mixed_window_03.jsonl,Authentication,P2,auth-service,raw logs contain no labels; use this only for offline eval
+AUTH_RBAC,raw_logs/full_mixed_window_03.jsonl,Authentication,P3,auth-service|admin-ui,raw logs contain no labels; use this only for offline eval
+CPU_THROTTLE,raw_logs/full_mixed_window_04.jsonl,Memory/CPU,P2,risk-engine,raw logs contain no labels; use this only for offline eval
+MEM_OOM,raw_logs/full_mixed_window_04.jsonl,Memory/CPU,P1,market-data-consumer|kubelet,raw logs contain no labels; use this only for offline eval
+GC_PAUSE,raw_logs/full_mixed_window_04.jsonl,Memory/CPU,P2,pricing-service,raw logs contain no labels; use this only for offline eval
+DEPLOY_ERROR,raw_logs/full_mixed_window_05.jsonl,Deployment regression,P1,payment-api,raw logs contain no labels; use this only for offline eval
+DEPLOY_FEATURE,raw_logs/full_mixed_window_05.jsonl,Deployment regression,P2,order-api,raw logs contain no labels; use this only for offline eval
+DEPLOY_CONFIG,raw_logs/full_mixed_window_05.jsonl,Deployment regression,P2,notification-worker,raw logs contain no labels; use this only for offline eval
+API_504,raw_logs/full_mixed_window_06.jsonl,API timeout,P2,nginx-gateway|risk-engine,raw logs contain no labels; use this only for offline eval
+API_P95,raw_logs/full_mixed_window_06.jsonl,API timeout,P2,payment-api,raw logs contain no labels; use this only for offline eval
+API_CIRCUIT,raw_logs/full_mixed_window_06.jsonl,API timeout,P2,order-api|pricing-service,raw logs contain no labels; use this only for offline eval
+QUEUE_LAG,raw_logs/full_mixed_window_07.jsonl,Queue backlog,P2,market-data-consumer|kafka-broker,raw logs contain no labels; use this only for offline eval
+QUEUE_POISON,raw_logs/full_mixed_window_07.jsonl,Queue backlog,P2,notification-worker|kafka-broker,raw logs contain no labels; use this only for offline eval
+QUEUE_REBALANCE,raw_logs/full_mixed_window_07.jsonl,Queue backlog,P3,trade-booking-service|kafka-broker,raw logs contain no labels; use this only for offline eval
+DISK_FULL,raw_logs/full_mixed_window_08.jsonl,Disk/storage,P1,order-api|kubelet|node-agent,raw logs contain no labels; use this only for offline eval
+DISK_ROTATE,raw_logs/full_mixed_window_08.jsonl,Disk/storage,P2,nginx-gateway|node-agent,raw logs contain no labels; use this only for offline eval
+STORAGE_IO,raw_logs/full_mixed_window_08.jsonl,Disk/storage,P2,postgres-primary,raw logs contain no labels; use this only for offline eval
+EXT_PAY,raw_logs/full_mixed_window_09.jsonl,External dependency,P2,payment-api,raw logs contain no labels; use this only for offline eval
+EXT_RATE,raw_logs/full_mixed_window_09.jsonl,External dependency,P3,notification-worker,raw logs contain no labels; use this only for offline eval
+EXT_MD,raw_logs/full_mixed_window_09.jsonl,External dependency,P2,market-data-consumer,raw logs contain no labels; use this only for offline eval
+UNK_STATE,raw_logs/full_mixed_window_10.jsonl,Unknown,P3,order-api,raw logs contain no labels; use this only for offline eval
+UNK_NOISE,raw_logs/full_mixed_window_10.jsonl,Unknown,P3,risk-engine|payment-api,raw logs contain no labels; use this only for offline eval
+UNK_CORR,raw_logs/full_mixed_window_10.jsonl,Unknown,P3,notification-worker,raw logs contain no labels; use this only for offline eval
