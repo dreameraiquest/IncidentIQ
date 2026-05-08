@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 .env
+*.log
 venv/
 .ipynb_checkpoints/
 outputs/
 *.zip
+
+

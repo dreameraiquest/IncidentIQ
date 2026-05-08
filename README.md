@@ -115,6 +115,96 @@ Unlike toy demos or rule-only systems, IncidentIQ:
 
 ---
 
+## 📁 Repository Structure
+
+```text
+IncidentIQ/
+│
+├── datasets/      # Synthetic mixed production-style incident datasets
+├── docs/          # Architecture diagrams, screenshots, design notes, demo assets
+├── notebooks/     # Experimental Colab/Jupyter prototypes and workflow validation
+├── src/           # Main production-oriented source code
+│
+├── .gitignore
+├── LICENSE
+├── README.md
+└── requirements.txt
+```
+
+---
+
+## Folder Details
+
+### `datasets/`
+
+Contains:
+- raw mixed production-style logs
+- hidden ground-truth evaluation datasets
+- benchmark incident corpora
+
+Purpose:
+- evaluation
+- testing
+- demo scenarios
+- workflow validation
+
+---
+
+### `docs/`
+
+Contains:
+- architecture diagrams
+- LangGraph workflow diagrams
+- screenshots
+- design documents
+- demo assets
+- operational notes
+
+---
+
+### `notebooks/`
+
+Contains:
+- experimental Colab notebooks
+- prompt engineering workflows
+- prototype pipelines
+- orchestration validation experiments
+
+Important:
+These notebooks are intended for:
+- experimentation
+- rapid prototyping
+- team collaboration
+
+The long-term maintainable implementation lives under:
+
+```text
+src/
+```
+
+---
+
+### `src/`
+
+Contains the modular production-oriented implementation.
+
+Includes:
+- LangGraph orchestration
+- agents
+- ingestion pipelines
+- signal extraction
+- clustering
+- evaluation
+- reporting
+- RAG support
+
+For detailed source architecture and planned implementation files, see:
+
+```text
+src/README.md
+```
+---
+
 ## 📊 Example Output
 
 ### Incident Detection
