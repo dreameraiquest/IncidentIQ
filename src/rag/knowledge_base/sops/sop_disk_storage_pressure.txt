@@ -1,0 +1,89 @@
+SOP: Disk / Storage Pressure
+=============================
+Stack: order-api / node-agent | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: Disk/storage | Severity: P1 | Owner: Infra Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=fs.storage: "No space left on device while writing /var/log/order-api/app.log"
+- logger=kubelet: "disk pressure on node ip-10-0-1-12 ephemeral-storage available=1%"
+- logger=logrotate: "logrotate failed for /var/log/containers/order-api.log because filesystem is full"
+- Kubernetes node condition DiskPressure=True on any prod node
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Check disk usage on the affected node (ip-10-0-1-12):
+   kubectl debug node/ip-10-0-1-12 -it --image=busybox -- df -h
+   kubectl debug node/ip-10-0-1-12 -it --image=busybox -- du -sh /var/log/containers/* | sort -rh | head -20
+
+2. Check node conditions:
+   kubectl describe node ip-10-0-1-12 | grep -A5 Conditions
+   Look for: DiskPressure=True, MemoryPressure, or kubelet errors
+
+3. Check which pods are on this node and at risk of eviction:
+   kubectl get pods -n prod --field-selector spec.nodeName=ip-10-0-1-12
+
+4. Find the largest log files in order-api pod:
+   kubectl exec -it order-api-<pod> -n prod -- \
+   du -sh /var/log/order-api/* | sort -rh | head -10
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — Log file growth without logrotate (most common):
+  Signal: "No space left on device" + "logrotate failed"
+  Cause: order-api logging at DEBUG level causing log explosion; logrotate cron failed
+  Evidence: /var/log/order-api/app.log exceeds 10GB
+
+Pattern B — Container image layer accumulation:
+  Signal: disk pressure but log files look normal
+  Cause: failed deployments left unused image layers on node
+  Check: kubectl debug node/<node> -it --image=busybox -- docker images --format "{{.Size}}\t{{.Repository}}"
+
+Pattern C — Persistent volume nearly full:
+  Signal: disk pressure on PVC not ephemeral storage
+  Check: kubectl get pvc -n prod | grep -v Bound
+  kubectl exec -it postgres-primary-<pod> -- df -h /var/lib/postgresql/data
+
+REMEDIATION
+-----------
+Step 1 — No approval needed (safe cleanup):
+  Free ephemeral log space immediately:
+    kubectl exec -it order-api-<pod> -n prod -- \
+    find /var/log/order-api -name "*.log" -size +500M -exec truncate -s 0 {} \;
+  ⚠️ Truncate, do NOT delete — preserves file handles
+
+Step 2 — Fix logrotate (SRE approval):
+  Force logrotate manually on affected node:
+    kubectl debug node/ip-10-0-1-12 -it --image=busybox -- \
+    logrotate -f /etc/logrotate.d/order-api
+  Then investigate why cron failed: systemctl status logrotate.timer
+
+Step 3 — Reduce log verbosity to INFO (SRE approval):
+  kubectl set env deployment/order-api LOG_LEVEL=INFO -n prod
+  Verify: kubectl logs order-api-<pod> -n prod --since=2m | grep DEBUG | wc -l  # should be 0
+
+Step 4 — Clean up stale container images (infra approval):
+  kubectl debug node/ip-10-0-1-12 -it --image=busybox -- \
+  docker image prune -a --filter "until=24h"
+  ⚠️ Only after confirming no active deployments pulling those images
+
+VALIDATION
+----------
+✅ df -h on node shows ephemeral-storage > 20% free
+✅ kubectl describe node ip-10-0-1-12: DiskPressure=False
+✅ order-api writing logs successfully (no "No space left" errors)
+✅ logrotate running on schedule (check cron: systemctl status cron)
+
+SAFETY RULES
+------------
+❌ Do NOT delete /var/log/containers files directly — breaks active container log streams
+❌ Do NOT delete PVC data without explicit application owner approval
+❌ Do NOT drain the node without checking which critical pods it hosts
+✅ Truncate log files instead of deleting — preserves file handles for running processes
+✅ Always check PVC usage before assuming it is ephemeral-only issue
+
+ESCALATION
+----------
+0-5 min:  On-call SRE (node DiskPressure can trigger pod evictions quickly)
+5-15 min: Infra lead + order-api service owner
+15+ min:  Engineering manager if pod evictions are impacting customer orders

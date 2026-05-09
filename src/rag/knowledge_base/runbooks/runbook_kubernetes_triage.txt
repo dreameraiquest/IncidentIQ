@@ -1,0 +1,122 @@
+RUNBOOK: Kubernetes General Triage — GKE us-east-1 prod cluster
+================================================================
+Stack: All services | GKE | env=prod | Node pool: ip-10-0-1-x range
+
+QUICK POD HEALTH CHECKS
+------------------------
+# All non-Running pods
+kubectl get pods -n prod | grep -v Running | grep -v Completed
+
+# Pod restart counts sorted (top crashers)
+kubectl get pods -n prod -o wide | awk '{print $4, $1, $7}' | sort -rn | head -15
+
+# Describe a crashing pod (look for OOMKilled, exit codes, events)
+kubectl describe pod <pod-name> -n prod | tail -30
+
+# Recent events across namespace (errors and warnings)
+kubectl get events -n prod --sort-by='.lastTimestamp' | grep -E "Warning|Error" | tail -20
+
+CHECKING RESOURCE USAGE
+------------------------
+# Top pods by memory
+kubectl top pods -n prod --sort-by=memory | head -15
+
+# Top pods by CPU
+kubectl top pods -n prod --sort-by=cpu | head -15
+
+# Node resource pressure
+kubectl describe nodes | grep -A8 "Allocated resources"
+
+# Check node conditions
+kubectl get nodes -o wide
+kubectl describe node ip-10-0-1-12 | grep -A10 Conditions
+
+COMMON EXIT CODES
+------------------
+Exit 0:   Normal exit
+Exit 1:   Application error (check logs)
+Exit 137: OOMKilled (memory limit exceeded — see sop_memory_cpu_oomkilled.txt)
+Exit 143: SIGTERM (graceful shutdown — usually normal, check if unexpected)
+Exit 255: Container failed to start (check image pull, config, entrypoint)
+
+ROLLING RESTART (safe, rolling — does not take service down)
+------------------------------------------------------------
+kubectl rollout restart deployment/<name> -n prod
+kubectl rollout status deployment/<name> -n prod
+
+ROLLBACK TO PREVIOUS VERSION
+------------------------------
+# View rollout history
+kubectl rollout history deployment/<name> -n prod
+
+# Rollback to previous
+kubectl rollout undo deployment/<name> -n prod
+
+# Rollback to specific revision
+kubectl rollout undo deployment/<name> --to-revision=3 -n prod
+
+# Confirm rollback
+kubectl rollout status deployment/<name> -n prod
+kubectl describe deployment/<name> -n prod | grep Image
+
+SCALING
+--------
+# Scale up
+kubectl scale deployment/<name> --replicas=6 -n prod
+
+# Check HPA status
+kubectl get hpa -n prod
+kubectl describe hpa <name>-hpa -n prod
+
+# Manually override HPA temporarily
+kubectl patch hpa <name>-hpa -n prod \
+  --patch '{"spec":{"minReplicas":4,"maxReplicas":10}}'
+
+LOG COLLECTION
+--------------
+# Live logs from all pods of a deployment
+kubectl logs -l app=payment-api -n prod -f --max-log-requests=6
+
+# Logs from previous crashed container
+kubectl logs payment-api-<pod> -n prod --previous
+
+# Logs from specific time window
+kubectl logs payment-api-<pod> -n prod --since=30m
+
+# Grep across all pods
+kubectl logs -l app=payment-api -n prod --since=10m | grep ERROR
+
+CONFIGMAP AND ENV INSPECTION
+------------------------------
+# Check active env vars on a pod
+kubectl exec -it payment-api-<pod> -n prod -- env | sort
+
+# Describe configmap
+kubectl describe configmap auth-config -n prod
+kubectl get configmap auth-config -n prod -o yaml
+
+# Check what configmaps a deployment uses
+kubectl describe deployment/payment-api -n prod | grep -A5 "ConfigMap\|Env"
+
+KNOWN SERVICES AND PORTS (prod)
+---------------------------------
+payment-api:         port 8080, actuator 8080/actuator
+order-api:           port 8080, actuator 8080/actuator
+auth-service:        port 8080, actuator 8080/actuator
+risk-engine:         port 8080, actuator 8080/actuator
+nginx-gateway:       port 80 (external), port 8080 (internal)
+postgres-primary:    port 5432
+redis-cache:         port 6379
+kafka-broker:        port 9092 (internal), 9093 (TLS)
+market-data-consumer: port 8080 (actuator only, no HTTP API)
+node-agent:          daemonset, port 9100 (node exporter)
+
+ACTUATOR ENDPOINTS (all Java services)
+----------------------------------------
+/actuator/health          — liveness and readiness
+/actuator/metrics         — all metrics list
+/actuator/env             — active config (sanitized)
+/actuator/circuitbreakers — circuit breaker states
+/actuator/heapdump        — POST to trigger heap dump (⚠️ expensive)
+/actuator/loggers         — GET/POST to inspect/change log level live
+/actuator/jwk-refresh     — POST on auth-service to force JWK cache refresh

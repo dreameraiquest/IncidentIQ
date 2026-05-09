@@ -1,0 +1,83 @@
+SOP: Deployment Regression and Canary Failure
+=============================================
+Stack: payment-api / deploy-controller / nginx-gateway | GKE us-east-1 | env=prod
+Category: Deployment regression | Severity: P1/P2 | Owner: Release Manager
+
+TRIGGER CONDITIONS
+------------------
+- logger=deploy: "rollout started service=payment-api version=2.9.0 canary=10%"
+  followed within 5 minutes by errors on payment-api version=2.9.0 pods
+- logger=deploy: "canary failed error_budget_burn=high rollback recommended for payment-api version=2.9.0"
+- Error rate increase on payment-api /api/payments/authorize correlated with new version pods
+- nginx-gateway 504 spike beginning within 5 minutes of deploy-controller rollout log
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Confirm rollout is active and identify version:
+   kubectl rollout status deployment/payment-api -n prod
+   kubectl get pods -l app=payment-api -n prod -o wide | grep -E "version|2.9"
+
+2. Correlate error onset with deployment time:
+   kubectl logs -l app=deploy-controller -n prod --since=30m | grep "rollout started"
+   kubectl logs -l app=payment-api -n prod --since=30m | grep ERROR | head -20
+
+3. Check canary error budget status:
+   kubectl logs -l app=deploy-controller -n prod --since=10m | grep "error_budget"
+
+4. Check nginx-gateway for 504 on payment-api:
+   kubectl logs -l app=nginx-gateway -n prod --since=10m | grep "504\|upstream timed out"
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — New version introduced DB connection leak (most common for payment-api v2.9.0):
+  Signal: HikariPool timeout errors started on version=2.9.0 pods only
+  Cause: new checkout path in v2.9.0 does not release connections under load
+  Evidence: deploy-controller "canary failed error_budget_burn=high" + HikariPool errors co-timed
+
+Pattern B — Increased memory usage in new version causing OOM:
+  Signal: payment-api v2.9.0 pods in CrashLoopBackOff or OOMKilled
+  Check: kubectl describe pod payment-api-<new-pod> -n prod | grep -A5 OOM
+
+Pattern C — Config regression (wrong environment variable in new image):
+  Signal: auth errors or wrong issuer after deployment
+  Check: kubectl get pod payment-api-<new-pod> -o yaml | grep -A20 env
+
+REMEDIATION
+-----------
+Step 1 — Pause the rollout immediately (SRE approval, fast):
+  kubectl rollout pause deployment/payment-api -n prod
+
+Step 2 — Rollback to previous stable version (release-manager approval):
+  kubectl rollout undo deployment/payment-api -n prod
+  kubectl rollout status deployment/payment-api -n prod
+  # Confirm all pods return to version=2.8.1
+
+Step 3 — Verify rollback restored stability:
+  kubectl logs -l app=payment-api -n prod --since=5m | grep ERROR | wc -l
+  # Should drop significantly vs pre-rollback count
+
+Step 4 — Freeze further deployments until RCA is complete:
+  kubectl annotate deployment/payment-api deploy.freeze=true -n prod
+  Post freeze notice to #releases Slack channel
+
+VALIDATION
+----------
+✅ All payment-api pods running version=2.8.1 (not 2.9.0)
+✅ /api/payments/authorize error rate returns to pre-deploy baseline
+✅ nginx-gateway: no new 504 on /api/payments/authorize
+✅ deploy-controller: no active rollout in progress
+✅ HikariPool errors cease within 2 minutes of rollback completing
+
+SAFETY RULES
+------------
+❌ Do NOT roll forward to fix — rollback first, fix in next release
+❌ Do NOT increase replicas of the bad version hoping to outscale the errors
+✅ Pause before rollback — gives you 60 seconds to gather evidence from bad pods
+✅ Capture kubectl describe and logs from bad-version pods before rollback completes
+✅ Always post rollback to #releases and #devops-incidents immediately
+
+ESCALATION
+----------
+0-5 min:  On-call SRE pauses rollout
+5-10 min: Release manager executes rollback + notifies engineering lead
+10+ min:  Engineering manager notified, post-mortem scheduled for next business day

@@ -1,0 +1,84 @@
+SOP: Database Connection Pool Exhaustion
+========================================
+Stack: payment-api / postgres-primary | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: Database | Severity: P1 | Owner: SRE Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=db.pool: "HikariPool-1 - Connection is not available, request timed out after 30000ms"
+- logger=postgres: "FATAL: remaining connection slots are reserved for non-replication superuser connections"
+- logger=db.pool: "SQLTransientConnectionException: timeout acquiring JDBC connection for checkout transaction"
+- payment-api status=500 or 503 on /api/payments/authorize sustained > 2 minutes
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Check postgres-primary connection state breakdown:
+   kubectl exec -it postgres-primary-<pod> -n prod -- psql -U admin -c \
+   "SELECT state, count(*) FROM pg_stat_activity GROUP BY state ORDER BY count DESC;"
+   Healthy:  active<40, idle<60, idle_in_transaction<5
+   Critical: idle_in_transaction>10 OR total>180 (max_connections=200)
+
+2. Check live HikariPool metrics from payment-api pod:
+   kubectl exec -it payment-api-<pod> -n prod -- \
+   curl -s localhost:8080/actuator/metrics/hikaricp.connections.active
+
+3. Find long-running transactions blocking the pool:
+   SELECT pid, now()-query_start AS duration, state, left(query,120)
+   FROM pg_stat_activity
+   WHERE state != 'idle' AND query_start < now()-interval '5 minutes'
+   ORDER BY duration DESC;
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — idle_in_transaction leak (most common in payment-api):
+  Symptoms: idle_in_transaction>10, HikariPool timeout, SQLTransientConnectionException together
+  Cause: checkout transaction not committed or rolled back under peak load
+
+Pattern B — bad canary deployment introduced connection leak:
+  Check deploy-controller logs for "rollout started service=payment-api version=2.9.0 canary=10%"
+  Correlate with first HikariPool error timestamp — if they match, rollback is the fix
+
+Pattern C — lock contention on postgres-primary:
+  SELECT pid, relation::regclass, mode, granted
+  FROM pg_locks l JOIN pg_stat_activity a ON l.pid=a.pid WHERE NOT granted;
+
+REMEDIATION
+-----------
+Step 1 — No approval needed, always do first:
+  Open circuit breaker to stop new requests hitting the exhausted pool:
+    kubectl set env deployment/payment-api CIRCUIT_BREAKER_ENABLED=true -n prod
+    kubectl set env deployment/nginx-gateway PAYMENT_CIRCUIT_OPEN=true -n prod
+
+Step 2 — Requires on-call SRE approval (kill idle_in_transaction only):
+  SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+  WHERE state='idle in transaction' AND query_start < now()-interval '5 minutes';
+  ⚠️ NEVER terminate pid where state='active'
+
+Step 3 — Requires release-manager approval (if Pattern B — bad deploy):
+  kubectl rollout undo deployment/payment-api -n prod
+  kubectl rollout status deployment/payment-api -n prod
+
+Step 4 — Monitor pool drain:
+  watch -n5 "kubectl exec payment-api-<pod> -n prod -- \
+  curl -s localhost:8080/actuator/metrics/hikaricp.connections.pending"
+
+VALIDATION
+----------
+✅ postgres-primary active connections drop below 80
+✅ payment-api HikariPool pending = 0
+✅ /api/payments/authorize error rate drops below 0.1%
+✅ nginx-gateway: no new 504 on /api/payments/authorize endpoint
+
+SAFETY RULES
+------------
+❌ Do NOT restart postgres-primary pod — full connection reset, data risk
+❌ Do NOT increase max_connections without DBA review — masks root cause
+❌ Do NOT kill active (non-idle) transactions without owner confirmation
+✅ Snapshot pg_stat_activity before any termination action
+✅ Post to #devops-incidents Slack before any DB-level change
+
+ESCALATION
+----------
+0-5 min:  On-call SRE resolves
+5-15 min: DB lead (pager) + payment-api service owner
+15+ min:  Engineering manager, consider partial maintenance window

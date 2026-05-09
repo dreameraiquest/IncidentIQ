@@ -1,0 +1,146 @@
+RUNBOOK: Database Triage — postgres-primary on GKE
+===================================================
+Stack: postgres-primary / payment-api / order-api | env=prod | us-east-1
+
+QUICK REFERENCE — pg_stat_activity queries
+-------------------------------------------
+-- Connection state breakdown
+SELECT state, count(*) FROM pg_stat_activity GROUP BY state ORDER BY count DESC;
+
+-- Long-running transactions (> 5 minutes)
+SELECT pid, now()-query_start AS duration, state, usename, left(query,200)
+FROM pg_stat_activity
+WHERE state != 'idle' AND query_start < now()-interval '5 minutes'
+ORDER BY duration DESC;
+
+-- Lock waits
+SELECT pid, relation::regclass, mode, granted
+FROM pg_locks l JOIN pg_stat_activity a ON l.pid=a.pid
+WHERE NOT granted;
+
+-- Top queries by total time (last reset)
+SELECT query, calls, total_exec_time/calls AS avg_ms, rows
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC LIMIT 10;
+
+-- Active connections by application
+SELECT application_name, count(*) FROM pg_stat_activity
+WHERE state != 'idle' GROUP BY application_name ORDER BY count DESC;
+
+HOW TO ACCESS postgres-primary
+--------------------------------
+kubectl exec -it postgres-primary-<pod> -n prod -- psql -U admin -d shopstream_prod
+
+HOW TO CHECK REPLICATION LAG
+------------------------------
+-- On primary:
+SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn,
+       (sent_lsn - replay_lsn) AS replication_lag_bytes
+FROM pg_stat_replication;
+
+-- Healthy: replication_lag_bytes < 1MB
+-- Warning: > 10MB
+-- Critical: > 100MB or replica not connected
+
+HOW TO TERMINATE CONNECTIONS SAFELY
+-------------------------------------
+-- SAFE: terminate idle_in_transaction only (> 5 min)
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE state = 'idle in transaction'
+AND query_start < now() - interval '5 minutes';
+
+-- NEVER do this without DBA approval:
+-- SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'active';
+
+HOW TO INTERPRET HIKARIPOOL METRICS
+-------------------------------------
+curl payment-api-<pod>:8080/actuator/metrics/hikaricp.connections | jq
+curl payment-api-<pod>:8080/actuator/metrics/hikaricp.connections.active | jq
+curl payment-api-<pod>:8080/actuator/metrics/hikaricp.connections.pending | jq
+curl payment-api-<pod>:8080/actuator/metrics/hikaricp.connections.timeout | jq
+
+Healthy:  pending=0, active < 20, timeout=0
+Warning:  pending > 5
+Critical: pending > 10 or timeout increasing
+
+KNOWN POSTGRES-PRIMARY LIMITS (prod)
+--------------------------------------
+max_connections: 200
+HikariPool max per payment-api pod: 25
+HikariPool max per order-api pod: 15
+Number of payment-api pods (normal): 4 = max 100 connections from payment-api
+Number of order-api pods (normal): 3 = max 45 connections from order-api
+Reserved for superuser: 3
+Total safe limit: ~150 active connections
+
+---
+
+RUNBOOK: Kafka Consumer Triage — kafka-broker / market-data-consumer
+=====================================================================
+Stack: kafka-broker / market-data-consumer | env=prod | us-east-1
+
+QUICK REFERENCE — kafka-broker commands
+-----------------------------------------
+# Access kafka-broker pod
+kubectl exec -it kafka-broker-<pod> -n prod -- bash
+
+# List all consumer groups
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 --list
+
+# Describe md-consumer group lag by partition
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group md-consumer --describe
+
+# Check DLQ depth
+kafka-run-class.sh kafka.tools.GetOffsetShell \
+  --broker-list localhost:9092 --topic dlq.prices | \
+  awk -F ':' '{sum += $3} END {print "DLQ depth:", sum}'
+
+# Check topic partition leaders
+kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic prices
+
+# Consume from DLQ to inspect poison messages (max 5, print key)
+kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic dlq.prices --max-messages 5 \
+  --property print.key=true --property print.timestamp=true \
+  --from-beginning
+
+HOW TO SKIP A POISON MESSAGE (requires data-platform approval)
+---------------------------------------------------------------
+# Reset offset for md-consumer on topic=prices partition=7 to skip 1 message
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group md-consumer --topic prices:7 \
+  --reset-offsets --shift-by 1 --execute
+
+# Verify new offset
+kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group md-consumer --describe | grep "prices.*7"
+
+HOW TO SCALE CONSUMERS
+------------------------
+# Scale up (only when NO poison message active)
+kubectl scale deployment/market-data-consumer --replicas=6 -n prod
+
+# Verify spread across partitions
+kubectl get pods -l app=market-data-consumer -n prod -o wide
+
+# Scale back after lag drains
+kubectl scale deployment/market-data-consumer --replicas=3 -n prod
+
+REBALANCE LOOP DETECTION
+--------------------------
+# Count rebalance events in last 10 minutes
+kubectl logs -l app=market-data-consumer -n prod --since=10m | \
+  grep -c "rebalance"
+
+# More than 3 rebalances in 5 minutes = rebalance loop (almost certainly poison message)
+# Action: scale to 0 first, investigate, then skip offset, then scale back
+
+KNOWN KAFKA TOPICS (prod)
+--------------------------
+prices          — primary price feed from external provider
+retry.prices    — retry topic (depth should be < 1000 in normal operation)
+dlq.prices      — dead letter queue (depth > 100 = investigate)
+orders          — order events from order-api
+risk.signals    — risk engine output consumed by payment-api

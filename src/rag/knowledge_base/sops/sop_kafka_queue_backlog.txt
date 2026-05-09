@@ -1,0 +1,102 @@
+SOP: Kafka Queue Backlog and DLQ Growth
+=======================================
+Stack: market-data-consumer / kafka-broker | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: Queue backlog | Severity: P2 | Owner: Data Platform Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=kafka.consumer: "consumer lag group=md-consumer topic=prices partition=7 lag=184230 queue backlog rising"
+- logger=kafka.broker: "retry topic retry.prices depth=92000 and DLQ growth detected for poison message key=PX-8891"
+- logger=kafka.consumer: "rebalance loop detected; consumer paused after processing poison message"
+- Consumer lag on topic=prices growing > 10000/minute for > 5 minutes
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Get consumer lag per partition for md-consumer group:
+   kubectl exec -it kafka-broker-<pod> -n prod -- \
+   kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+   --group md-consumer --describe | grep prices
+
+2. Check DLQ depth:
+   kubectl exec -it kafka-broker-<pod> -n prod -- \
+   kafka-topics.sh --bootstrap-server localhost:9092 \
+   --describe --topic dlq.prices | grep -i "leader\|partitions"
+
+   kubectl exec -it kafka-broker-<pod> -n prod -- \
+   kafka-log-dirs.sh --bootstrap-server localhost:9092 \
+   --topic-list dlq.prices | grep size
+
+3. Check market-data-consumer pod status — rebalance loops often crash pods:
+   kubectl get pods -l app=market-data-consumer -n prod
+   kubectl logs market-data-consumer-<pod> -n prod --since=10m | grep -i "rebalance\|poison\|pause"
+
+4. Identify the poison message:
+   kubectl exec -it kafka-broker-<pod> -n prod -- \
+   kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+   --topic retry.prices --max-messages 5 --property print.key=true
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — Poison message causing rebalance loop (most common):
+  Signal: "rebalance loop detected; consumer paused after processing poison message key=PX-8891"
+  Cause: malformed price feed record crashes consumer on deserialization, triggers infinite rebalance
+  Evidence: DLQ growing + same key appearing repeatedly in retry.prices
+
+Pattern B — Slow consumer processing (market data spike):
+  Signal: lag growing but no rebalance, no DLQ growth
+  Cause: market-data-consumer processing rate < produce rate during high volatility window
+  Evidence: consumer pod CPU near limit, no rebalance events
+
+Pattern C — kafka-broker partition leader election:
+  Signal: lag spike across all partitions simultaneously
+  Cause: broker restart or network partition caused leader re-election
+  Evidence: kafka-broker logs show "LeaderElection" events
+
+REMEDIATION
+-----------
+Step 1 — No approval needed (safe isolation):
+  If poison message is confirmed, pause the affected consumer group:
+    kubectl scale deployment/market-data-consumer --replicas=0 -n prod
+
+Step 2 — Data platform approval needed (skip/quarantine poison message):
+  Skip the poison message by moving offset past it:
+    kubectl exec -it kafka-broker-<pod> -n prod -- \
+    kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+    --group md-consumer --topic prices --reset-offsets \
+    --to-offset <current+1> --partition 7 --execute
+  ⚠️ This skips the message — confirm with data-platform owner it is safe to drop
+
+Step 3 — Scale consumers if Pattern B (SRE approval):
+  kubectl scale deployment/market-data-consumer --replicas=6 -n prod
+  Only if no poison message — scaling into a poison message amplifies the rebalance loop
+
+Step 4 — Resume consumers:
+  kubectl scale deployment/market-data-consumer --replicas=3 -n prod
+  Watch lag drain: kafka-consumer-groups.sh --group md-consumer --describe
+
+Step 5 — Replay DLQ after fix (data-platform approval):
+  Only replay after the poison message is fixed in application code or filtered
+  kubectl exec -it kafka-broker-<pod> -n prod -- \
+  kafka-mirror-maker.sh --consumer.config dlq-consumer.properties \
+  --producer.config prices-producer.properties --whitelist dlq.prices
+
+VALIDATION
+----------
+✅ Consumer lag on topic=prices decreasing toward 0
+✅ DLQ depth no longer growing
+✅ market-data-consumer pods stable, no rebalance events in logs
+✅ retry.prices depth decreasing
+
+SAFETY RULES
+------------
+❌ Do NOT replay DLQ before the poison message root cause is fixed
+❌ Do NOT scale consumers without confirming no active poison message
+❌ Do NOT manually delete Kafka topic messages without data-platform approval
+✅ Preserve DLQ content as evidence before any replay or skip
+✅ Coordinate with data-platform team before any offset reset
+
+ESCALATION
+----------
+0-5 min:  On-call SRE + data-platform on-call
+5-15 min: Data platform lead — poison message triage requires their sign-off
+15+ min:  Engineering manager if market data feed is customer-impacting
