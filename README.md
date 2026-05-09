@@ -5,6 +5,13 @@ IncidentIQ is an AI-powered multi-agent DevOps incident analysis platform that t
 
 Built using LangGraph, LLMs, and deterministic evidence extraction pipelines, IncidentIQ acts like an AI Incident Commander for SRE and DevOps teams. The system ingests noisy, mixed, production-style logs and orchestrates specialized agents to detect incidents, infer severity, reconstruct timelines, identify probable root causes, recommend safe remediation actions, and generate collaboration-ready outputs such as Slack alerts and GitHub/JIRA ticket previews.
 
+
+---
+
+<p align="center">
+  <img src="docs/diagrams/IncidentIQ Flowchart - The Multi-Agent Evolution of DevOps Incident Analysis.png" alt="IncidentIQ multi-agent DevOps incident analysis workflow" width="900">
+</p>
+
 ---
 
 ## ✨ Key Features
