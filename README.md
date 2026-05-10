@@ -17,27 +17,6 @@ Built using **LangGraph**, **LLMs**, **RAG pipelines**, and **deterministic evid
 
 ---
 
-# 🏆 Hackathon Alignment
-
-This project directly implements the requirements from the:
-
-> **“Multi-agent DevOps Incident Analysis Suite”** hackathon challenge.
-
-IncidentIQ demonstrates:
-
-✅ Multi-agent orchestration using LangGraph  
-✅ AI-powered log parsing and classification  
-✅ Root cause analysis with evidence grounding  
-✅ Slack notification automation via n8n  
-✅ JIRA ticket automation via n8n  
-✅ RAG-powered SOP/runbook retrieval  
-✅ Human-in-the-loop operational safety  
-✅ Production-style DevOps/SRE workflows  
-✅ Automated remediation recommendations  
-✅ Cookbook and action synthesis  
-
----
-
 # 🧠 What Makes IncidentIQ Different?
 
 Unlike toy AI demos or simple keyword classifiers, IncidentIQ:
