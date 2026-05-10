@@ -454,7 +454,7 @@ def process_logs(files, demo_mode):
 # App builder
 # ─────────────────────────────────────────────────────────────
 def build_app():
-    with gr.Blocks(css=CUSTOM_CSS, theme=gr.themes.Base()) as demo:
+    with gr.Blocks() as demo:
 
         gr.HTML(f"""
         <div class="iq-header">
