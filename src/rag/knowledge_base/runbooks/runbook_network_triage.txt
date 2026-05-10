@@ -1,0 +1,120 @@
+RUNBOOK: Network Connectivity Triage — GKE us-east-1 prod cluster
+==================================================================
+Stack: nginx-gateway / order-api / risk-engine / kube-dns / auth-service | env=prod | us-east-1
+Category: Network | Owner: Platform Team + Infra Team
+
+PATTERN 1 — CONNECTION RESET (NET_RESET)
+-----------------------------------------
+Signals:
+  - "upstream prematurely closed connection while reading response header" (nginx-gateway, logger=nginx)
+  - "recv() failed (104: Connection reset by peer)" (nginx-gateway, logger=nginx)
+  - "upstream connect error or disconnect/reset before headers" (nginx-gateway, logger=nginx)
+
+Affected services: nginx-gateway (reporter), order-api (upstream that reset the connection)
+
+Quick triage:
+  # 1. Is the upstream pod alive?
+  kubectl get pods -l app=order-api -n prod
+
+  # 2. Did it crash recently?
+  kubectl describe pod <order-api-pod> -n prod | grep -E "Restart Count|Reason|OOMKilled|Exit Code"
+
+  # 3. Check file descriptor exhaustion
+  kubectl exec -it <order-api-pod> -- cat /proc/1/limits | grep "open files"
+  kubectl exec -it <order-api-pod> -- ls /proc/1/fd | wc -l
+
+  # 4. Check keepalive config mismatch (nginx keepalive_timeout vs upstream idle timeout)
+  kubectl exec -it <nginx-gateway-pod> -- nginx -T 2>/dev/null | grep keepalive_timeout
+
+Remediation:
+  - If upstream pod crashed: follow the appropriate SOP for that crash (OOM, code error, etc)
+  - If FD exhaustion: kubectl rollout restart deployment/order-api -n prod (rolling, safe)
+  - If keepalive mismatch: update nginx keepalive_timeout to be lower than upstream idle timeout
+
+---
+
+PATTERN 2 — DNS RESOLUTION FAILURE (NET_DNS)
+----------------------------------------------
+Signals:
+  - "lookup <service>.default.svc.cluster.local on 10.96.0.10: no such host" (risk-engine or any service)
+  - "Temporary failure in name resolution" (any service)
+  - "CoreDNS query timeout for internal service" (kube-dns or service logs)
+
+Affected services: risk-engine (resolver), kube-dns (CoreDNS)
+
+Quick triage:
+  # 1. Check CoreDNS pod health
+  kubectl get pods -n kube-system -l k8s-app=kube-dns
+  kubectl logs -n kube-system -l k8s-app=kube-dns --since=10m | grep -i "error\|timeout\|refused"
+
+  # 2. Test DNS from the affected pod
+  kubectl exec -it <risk-engine-pod> -- nslookup pricing-service.prod.svc.cluster.local
+  kubectl exec -it <risk-engine-pod> -- nslookup kubernetes.default.svc.cluster.local
+  # If kubernetes.default resolves but pricing-service doesn't: Service is missing or in wrong namespace
+
+  # 3. Verify the target Service exists
+  kubectl get svc pricing-service -n prod
+  kubectl get endpoints pricing-service -n prod
+
+  # 4. Check node-level DNS rate limiting (ndots and resolv.conf)
+  kubectl exec -it <risk-engine-pod> -- cat /etc/resolv.conf
+
+Remediation:
+  - If CoreDNS pods are not Running: kubectl rollout restart deployment/coredns -n kube-system (requires cluster admin)
+  - If Service is missing: redeploy the missing service or apply the Service manifest
+  - If DNS is flapping under load: reduce ndots in the pod spec to reduce DNS query volume
+  - Temporary: add the ClusterIP directly to the affected service's env config while CoreDNS is investigated
+
+KNOWN COREDNS LIMITS (prod GKE)
+  CoreDNS replicas: 2 (minimum)
+  Default ndots: 5 (causes up to 5 DNS queries per lookup for short names)
+  DNS cache TTL: 30s
+
+---
+
+PATTERN 3 — TLS HANDSHAKE FAILURE (NET_TLS)
+---------------------------------------------
+Signals:
+  - "TLS handshake timeout" (nginx-gateway, logger=nginx)
+  - "certificate verify failed: unable to get local issuer certificate" (nginx-gateway, logger=nginx)
+  - "ssl handshake failed while connecting to upstream" (nginx-gateway or any service with mTLS)
+
+Affected services: nginx-gateway (TLS terminator), auth-service (upstream with TLS)
+
+Quick triage:
+  # 1. Check certificate expiry from within the cluster
+  kubectl exec -it <nginx-gateway-pod> -- \
+    openssl s_client -connect auth-service:8443 2>/dev/null | openssl x509 -noout -dates
+
+  # 2. Check TLS secret expiry
+  kubectl get secret <tls-secret> -n prod -o jsonpath='{.data.tls\.crt}' | \
+    base64 -d | openssl x509 -noout -dates
+
+  # 3. Check cert-manager renewal status (if used)
+  kubectl describe certificate <cert-name> -n prod | grep -A5 "Status\|Not After\|Renewal"
+  kubectl get certificaterequest -n prod | grep -v Approved
+
+  # 4. For intermediate CA issues — check if full chain is present
+  kubectl get secret <tls-secret> -n prod -o jsonpath='{.data.tls\.crt}' | \
+    base64 -d | openssl x509 -text -noout | grep "Issuer\|Subject"
+
+  # 5. Check TLS version compatibility
+  kubectl exec -it <nginx-gateway-pod> -- \
+    openssl s_client -connect auth-service:8443 -tls1_2 2>&1 | head -5
+
+Remediation:
+  - Expired cert: create new certificate secret and apply; requires cert owner + release-manager approval
+  - Missing intermediate CA: update TLS secret to include full chain (leaf + intermediate + root)
+  - cert-manager failure: kubectl delete certificaterequest <name> -n prod to trigger re-issue
+  - TLS version mismatch: update nginx ssl_protocols to match upstream supported versions
+
+SAFETY RULES
+  ❌ Do NOT set ssl_verify_client off or disable certificate verification in nginx
+  ❌ Do NOT use self-signed certs in prod without explicit infra team approval
+  ✅ Always confirm the full certificate chain before applying new TLS secrets
+  ✅ Test TLS from inside the cluster, not from external — network path matters
+
+ESCALATION
+  0-5 min:  Platform on-call confirms which pattern (reset/DNS/TLS)
+  5-15 min: Engage infra team for DNS/TLS root cause
+  15+ min:  Engineering manager if nginx-gateway is affected (customer-facing)

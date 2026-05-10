@@ -1,0 +1,241 @@
+KNOWN ERROR TO FIX MAPPINGS — EXTENDED
+
+Category: Database
+Error: ERROR: deadlock detected
+Error: Process waits for ShareLock on transaction; blocked by another process
+Error: could not serialize access due to concurrent update
+Root cause: Two or more transactions are acquiring locks in conflicting order on postgres-primary. Often triggered by trade-booking-service doing concurrent inserts or updates on the same rows.
+Fix:
+  1. Identify deadlock victims from pg_stat_activity and postgres logs (postgres logs the full deadlock graph).
+  2. Do NOT manually terminate all sessions — postgres auto-cancels one deadlock victim. Verify self-resolution first.
+  3. If recurring: review transaction ordering in trade-booking-service. Ensure all code paths lock rows in a consistent order.
+  4. Short-term: set lock_timeout = '5s' on affected sessions to prevent long hangs.
+  5. Requires DBA approval before any schema or index changes.
+Severity: P2
+
+Category: Database
+Error: duration: <N> ms execute SELECT ... (slow query logged by postgres)
+Error: slow query threshold exceeded query_hash=<hash>
+Error: temporary file size exceeded work_mem
+Root cause: A query in order-api or another service is performing a sequential scan or sort that exceeds work_mem, spilling to disk (temp file). Often caused by missing index, bad query plan, or table bloat.
+Fix:
+  1. Capture the full query from postgres slow query log (log_min_duration_statement).
+  2. Run EXPLAIN (ANALYZE, BUFFERS) on the slow query from a read replica — never on primary under load.
+  3. Check if a recent deployment changed query patterns (JOIN order, missing WHERE clause).
+  4. Temporary relief: increase work_mem for the session only (not globally).
+  5. Long-term: add appropriate index or rewrite the query. Requires DBA review.
+  6. If temp file growth is filling disk, see sop_disk_storage_pressure.txt.
+Severity: P2
+
+Category: Authentication
+Error: failed to refresh JWK set from identity provider
+Error: kid not found in cached signing keys
+Error: metadata endpoint returned 503
+Root cause: auth-service cannot reach the identity provider's JWK or metadata endpoint. All tokens signed with keys not in the local cache will fail validation even if the token itself is valid.
+Fix:
+  1. Check identity provider status page immediately.
+  2. Trigger a manual JWK cache refresh: POST /actuator/jwk-refresh on auth-service pods.
+  3. If metadata endpoint is returning 503, check network policy and DNS resolution from auth-service pod.
+  4. Extend JWK cache TTL temporarily to serve from stale cache: set JWK_CACHE_TTL_MINUTES=60 via kubectl set env.
+  5. Do NOT disable token validation as a workaround.
+  6. Requires identity platform on-call approval before any JWK config change.
+Severity: P2
+
+Category: Authentication
+Error: policy decision deny role=ops resource=incident:write
+Error: RBAC evaluation returned deny for previously allowed action
+Error: permission matrix cache version mismatch
+Root cause: auth-service RBAC policy has been updated or the permission matrix cache is stale, causing previously allowed actions to be denied. Often triggered by a configmap or policy file update. Affects admin-ui and ops tooling.
+Fix:
+  1. Confirm the deny is unexpected by checking the last known RBAC policy version.
+  2. Check for recent configmap updates: kubectl describe configmap rbac-policy -n prod
+  3. Force a permission matrix cache refresh on auth-service: kubectl rollout restart deployment/auth-service -n prod (rolling restart, safe).
+  4. If a bad policy was deployed, revert the configmap to the previous version with release-manager approval.
+  5. Do NOT broaden permissions as a quick fix.
+Severity: P3 — create_ticket=false, notify=false unless elevated by policy owner.
+
+Category: Queue backlog
+Error: consumer group rebalance started
+Error: member heartbeat failed session timeout
+Error: partition assignment revoked repeatedly
+Root cause: A consumer in the Kafka consumer group is failing to send heartbeats within session.timeout.ms, causing Kafka to repeatedly rebalance partition assignments. This is NOT a poison message — no single message is stuck. Causes: slow processing, GC pauses, network hiccup, or over-loaded consumer pods.
+Fix:
+  1. Check consumer pod health first: kubectl top pods -l app=<consumer> -n prod
+  2. If pod is CPU or memory stressed, see sop_memory_cpu_oomkilled.txt or CPU_THROTTLE pattern.
+  3. Increase session.timeout.ms (e.g., from 10s to 30s) if transient GC pauses are the cause.
+  4. Do NOT skip offsets — this is NOT a poison message scenario.
+  5. If rebalances are driven by pod restarts, fix the pod stability first.
+  6. Requires data-platform approval to change consumer group config.
+Severity: P3 — create_ticket=false, notify=false unless lag is also growing.
+
+Category: Disk/storage
+Error: logrotate failed: destination disk full
+Error: access.log grew beyond expected size
+Error: compress old log failed no space left on device
+Root cause: nginx-gateway access.log has grown beyond expected size and logrotate cannot compress old logs because the filesystem is already full. Different from application log growth — nginx access logs are written by the node's logrotate cron, not the application.
+Fix:
+  1. Check nginx access.log size: kubectl exec -it <nginx-pod> -n prod -- du -sh /var/log/nginx/
+  2. Truncate access.log safely (preserving file handle): kubectl exec -it <nginx-pod> -n prod -- truncate -s 0 /var/log/nginx/access.log
+  3. Trigger logrotate manually on node-agent: kubectl exec -it <node-agent-pod> -n prod -- logrotate -f /etc/logrotate.d/nginx
+  4. Confirm disk freed: df -h on the node.
+  5. Review nginx log format and access log verbosity — consider disabling health check endpoint logging.
+Severity: P2
+
+Category: Disk/storage
+Error: iowait above threshold
+Error: fsync latency exceeded 2500ms
+Error: persistent volume write latency high
+Root cause: postgres-primary is experiencing storage I/O saturation. This can be caused by high write volume, a noisy neighbour on the same underlying storage, or PV performance limits being hit. Slow fsync directly degrades postgres commit latency.
+Fix:
+  1. Check node iowait: kubectl exec -it <node-agent-pod> -- iostat -x 2 5
+  2. Check postgres-primary WAL write latency: query pg_stat_bgwriter for checkpoint timing.
+  3. If caused by a write-heavy workload, identify the source (bulk inserts, vacuums, index builds).
+  4. Short-term: pause non-critical batch jobs writing to postgres.
+  5. Do NOT restart postgres-primary. Restarting under I/O pressure can corrupt WAL.
+  6. Escalate to infra team if PV IOPS limit is being hit — requires volume resize or migration.
+Severity: P2
+
+Category: API timeout
+Error: p95 latency breached 2500ms for /api/payments/authorize
+Error: request timed out after 15000ms
+Error: slow response from authorize endpoint
+Root cause: payment-api /api/payments/authorize endpoint is responding slowly — p95 is above SLO but the gateway has not yet timed out (not a full 504). Often a precursor to DB pool exhaustion or upstream dependency degradation. Check DB and Redis health before investigating the service itself.
+Fix:
+  1. Check DB pool metrics (see runbook_database_and_kafka_triage.txt).
+  2. Check Redis cache latency: kubectl logs -l app=payment-api -n prod --since=5m | grep redis
+  3. Check if a recent deployment correlates with the latency onset.
+  4. Enable circuit breaker on payment-api if latency is worsening.
+  5. Do NOT increase gateway timeout as first action — diagnose the root cause first.
+Severity: P2
+
+Category: API timeout
+Error: circuit breaker opened for pricing-service
+Error: half-open probe failed dependency=pricing-service
+Error: fallback response returned due to downstream timeout
+Root cause: order-api's circuit breaker to pricing-service has opened because pricing-service is responding too slowly or returning errors. Half-open probe means the circuit breaker is testing if the dependency has recovered. Fallback responses are being returned to clients.
+Fix:
+  1. Investigate pricing-service health directly: kubectl get pods -l app=pricing-service -n prod
+  2. Check pricing-service logs for the root cause (may be GC pause, DB issue, or vendor feed delay).
+  3. Do NOT manually force the circuit breaker closed — it will reset automatically when pricing-service recovers.
+  4. If fallback responses are unacceptable (e.g., stale prices), escalate to pricing-service owner.
+  5. If pricing-service is healthy but circuit is stuck open, rolling restart of order-api will reset circuit state.
+Severity: P2
+
+Category: Deployment regression
+Error: feature flag strict-order-validation enabled
+Error: validation path rejected valid order payload
+Error: new code path triggered exception IllegalStateException
+Root cause: A feature flag was enabled on order-api that activates a new validation path. The new path contains a bug (IllegalStateException) that rejects valid order payloads. Affected users cannot submit orders.
+Fix:
+  1. Disable the feature flag immediately: kubectl set env deployment/order-api FEATURE_STRICT_ORDER_VALIDATION=false -n prod
+  2. Confirm error rate drops after flag disable.
+  3. Notify release manager and feature flag owner.
+  4. Do NOT rollback the entire deployment — disabling the flag is the smallest safe fix.
+  5. Root cause the IllegalStateException before re-enabling the flag.
+Severity: P2
+
+Category: Deployment regression
+Error: configuration reloaded from configmap notification-worker-v17
+Error: missing required property smtp.connection.timeout
+Error: worker failed after config reload
+Root cause: A configmap update (notification-worker-v17) was applied to notification-worker that is missing a required property (smtp.connection.timeout). The worker crashed on config reload. This is a configmap regression, not a code regression.
+Fix:
+  1. Identify the bad configmap: kubectl describe configmap notification-worker-v17 -n prod
+  2. Restore the previous configmap version: kubectl apply -f <previous-configmap.yaml> (requires release-manager approval).
+  3. Trigger a rolling restart: kubectl rollout restart deployment/notification-worker -n prod
+  4. Confirm worker recovers and processes the queue.
+  5. Add required property validation to configmap CI pipeline.
+Severity: P2
+
+Category: Memory/CPU
+Error: container_cpu_cfs_throttled_periods_total increased sharply
+Error: CPU throttling above 38 percent over 5m window
+Error: request queue waiting for worker thread
+Root cause: risk-engine is hitting its CPU limit (CFS throttle). The container is allowed to burst but the kernel is throttling it back. Worker threads are queuing because they cannot get CPU time. This is NOT an OOM — the pod stays running but becomes slow.
+Fix:
+  1. Confirm throttling: kubectl top pod -l app=risk-engine -n prod
+  2. Check if a recent deployment or traffic spike caused the CPU increase.
+  3. Short-term: scale risk-engine replicas to distribute load: kubectl scale deployment/risk-engine --replicas=<N> -n prod
+  4. Medium-term: increase CPU limit in deployment spec (requires infra team approval and load testing).
+  5. Do NOT blindly increase CPU limits without profiling — could be a code regression causing CPU spike.
+Severity: P2
+
+Category: Memory/CPU
+Error: GC pause took 4212ms, allocation failure
+Error: OldGen usage above threshold
+Error: stop-the-world pause exceeded latency SLO
+Root cause: pricing-service JVM is experiencing long stop-the-world GC pauses because OldGen is nearly full and the GC cannot reclaim enough memory. Often caused by a memory leak, large object retention, or insufficient heap size for current traffic volume.
+Fix:
+  1. Check heap metrics: curl pricing-service-<pod>:8080/actuator/metrics/jvm.memory.used | jq
+  2. If heap is growing linearly, this is a leak — rollback the most recent deployment.
+  3. If heap is stable but OldGen is full, trigger a full GC (last resort, causes pause): kubectl exec -it <pod> -- jcmd 1 GC.run
+  4. Capture a heap dump before restarting: curl -X POST pricing-service-<pod>:8080/actuator/heapdump > /tmp/heap.hprof
+  5. Increase heap size only as a temporary measure while investigating root cause.
+Severity: P2
+
+Category: External dependency
+Error: SMS provider returned HTTP 429 rate limit exceeded
+Error: vendor quota exceeded for message batch
+Error: Retry-After header received from external provider
+Root cause: notification-worker has exceeded the SMS provider's rate limit or daily quota. Unlike market data vendors, SMS providers often impose hard daily quotas. Retry storms against a quota-limited provider waste the remaining budget.
+Fix:
+  1. Check notification-worker retry rate immediately: kubectl logs -l app=notification-worker -n prod --since=5m | grep -c "429\|retry"
+  2. If retrying without respecting Retry-After, enable backoff: kubectl set env deployment/notification-worker RETRY_BACKOFF_BASE_MS=30000 RESPECT_RETRY_AFTER=true -n prod
+  3. Check remaining daily quota with SMS provider dashboard or API.
+  4. If quota is exhausted for the day, enable message queuing (hold-and-retry next day) or switch to backup SMS provider.
+  5. Notify on-call notification owner — users are not receiving notifications.
+Severity: P3 — create_ticket=false, notify=false unless user-facing impact is confirmed by product team.
+
+Category: Network
+Error: upstream prematurely closed connection while reading response header
+Error: recv() failed (104: Connection reset by peer)
+Error: upstream connect error or disconnect/reset before headers
+Root cause: nginx-gateway is receiving a TCP connection reset from an upstream service (order-api or other). This means the upstream closed the connection without sending an HTTP response. Causes: upstream service crashed mid-request, keepalive timeout mismatch between nginx and upstream, or upstream ran out of file descriptors.
+Fix:
+  1. Check upstream pod health: kubectl get pods -l app=order-api -n prod
+  2. Check if the upstream pod restarted around the error onset: kubectl describe pod <pod> -n prod | grep "Restart Count\|OOMKilled"
+  3. Check file descriptor limits: kubectl exec -it <order-api-pod> -- cat /proc/1/limits | grep "open files"
+  4. If keepalive timeout mismatch: confirm nginx keepalive_timeout matches upstream's server timeout.
+  5. If pod is crashing, follow the appropriate SOP for the crash cause (OOM, code error, etc).
+Severity: P2
+
+Category: Network
+Error: lookup <service>.default.svc.cluster.local on 10.96.0.10: no such host
+Error: Temporary failure in name resolution
+Error: CoreDNS query timeout for internal service
+Root cause: A service (risk-engine or other) cannot resolve an internal Kubernetes DNS name. Cause is either a CoreDNS outage, a missing Service resource, or DNS resolution being rate-limited at the node level.
+Fix:
+  1. Check CoreDNS health: kubectl get pods -n kube-system -l k8s-app=kube-dns
+  2. Test DNS resolution from the affected pod: kubectl exec -it <risk-engine-pod> -- nslookup pricing-service.default.svc.cluster.local
+  3. Check if the target Service exists: kubectl get svc pricing-service -n prod
+  4. If CoreDNS pods are crashing, restart them: kubectl rollout restart deployment/coredns -n kube-system (requires cluster admin approval)
+  5. Temporary workaround: add the service's ClusterIP directly to the affected service's env config.
+Severity: P2
+
+Category: Network
+Error: TLS handshake timeout
+Error: certificate verify failed: unable to get local issuer certificate
+Error: ssl handshake failed while connecting to upstream
+Root cause: nginx-gateway or another service cannot complete a TLS handshake with an upstream. Causes: expired certificate, missing intermediate CA in the trust chain, or TLS version mismatch between client and server.
+Fix:
+  1. Check certificate expiry: kubectl exec -it <nginx-pod> -- openssl s_client -connect <upstream>:443 2>/dev/null | openssl x509 -noout -dates
+  2. If certificate expired, escalate to the cert owner immediately — this is a P1 for any external-facing service.
+  3. If the issuer is not found: verify that the full certificate chain (including intermediate CAs) is present in the TLS secret.
+  4. Check TLS secret: kubectl describe secret <tls-secret> -n prod | grep Not
+  5. For internal mTLS issues, check if cert-manager has failed to renew: kubectl describe certificate <name> -n prod
+  6. Do NOT disable TLS verification as a workaround.
+Severity: P2
+
+Category: Unknown
+Error: RuntimeError: unexpected null reference in enrichment stage
+Error: unclassified exception emitted without error code
+Error: sporadic failure below alert threshold
+Root cause: The service (risk-engine, payment-api) is emitting exceptions that do not match any known error pattern. The failures are sporadic and below alerting thresholds. This may be a noise event, an emerging issue, or the early signal of a developing incident.
+Fix:
+  1. Do NOT take immediate remediation action — collect evidence first.
+  2. Capture the full exception stacktrace: kubectl logs -l app=<service> -n prod --since=30m | grep -A10 "RuntimeError\|unclassified exception"
+  3. Check if the exception is correlated with a recent deployment or config change.
+  4. Check if the exception is isolated to one pod or all pods: kubectl logs -l app=<service> -n prod --since=30m | grep "RuntimeError" | grep -oP '"pod":"[^"]+"' | sort | uniq -c
+  5. Open an investigation ticket with the stacktrace and pod evidence.
+  6. If rate increases above 1% of requests, escalate to P2 and treat as active incident.
+Severity: P3 — create_ticket=false, notify=false, human_approval_required=false.

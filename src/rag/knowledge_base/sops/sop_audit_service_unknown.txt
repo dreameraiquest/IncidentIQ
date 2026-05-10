@@ -1,0 +1,143 @@
+SOP: Unknown Incident — audit-service Incomplete Evidence Triage
+================================================================
+Stack: audit-service | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: Unknown | Severity: P3 | Owner: SRE Team + Audit Service Owner
+
+TRIGGER CONDITIONS
+------------------
+- logger=audit on audit-service: "missing correlation ID for state transition audit_event=POSITION_RECONCILE"
+- logger=audit on audit-service: "unexpected state transition old=SETTLED new=PENDING_REVIEW trace unavailable redacted stack trace"
+- logger=audit on audit-service: "incomplete trace; request additional telemetry before assigning root cause"
+- audit-service emitting state transition warnings without matching trace_id in distributed tracing
+
+WHAT audit-service DOES
+------------------------
+audit-service records state transitions for financial positions in the alpha-capital platform.
+Key state transitions it tracks: PENDING → ACTIVE → SETTLED → (normally end state)
+Unexpected: SETTLED → PENDING_REVIEW (indicates a position being reopened for review)
+audit_event=POSITION_RECONCILE: triggered when position state does not match expected ledger state
+
+TRIAGE APPROACH FOR UNKNOWN/INCOMPLETE EVIDENCE
+------------------------------------------------
+⚠️ This is a P3 — do NOT execute disruptive remediation without clear evidence.
+⚠️ create_ticket=false until root cause is confirmed. Raise investigation ticket only.
+⚠️ audit-service signals alone are insufficient to act on — they indicate something upstream
+   caused an unexpected state, but audit-service is the observer, not the cause.
+
+Step 1 — Capture the full trace window:
+  kubectl logs -l app=audit-service -n prod --since=30m | \
+  grep -E "missing correlation|unexpected state|incomplete trace" | \
+  grep -oP '"trace_id":"\K[^"]+' | sort -u
+  # Collect all trace_ids from the anomaly window
+
+Step 2 — Check if correlated with another active incident:
+  Cross-reference trace_ids from audit-service with payment-api, order-api, risk-engine logs
+  kubectl logs -l environment=prod -n prod --since=30m | \
+  grep "<trace_id_from_step1>"
+  # If same trace_id appears in payment-api or order-api errors → audit signal is a downstream symptom
+
+Step 3 — Check for recent deployments:
+  kubectl rollout history deployment -n prod 2>/dev/null | grep -v "^$\|REVISION"
+  # Unexpected state transitions often appear after a bad deploy changes state machine logic
+
+Step 4 — Check audit-service pod health:
+  kubectl get pods -l app=audit-service -n prod
+  kubectl logs audit-service-<pod> -n prod --previous 2>/dev/null | tail -30
+  # If pod recently crashed, previous logs may reveal the cause
+
+Step 5 — Check if POSITION_RECONCILE anomaly is isolated or widespread:
+  kubectl logs -l app=audit-service -n prod --since=30m | \
+  grep "POSITION_RECONCILE" | grep -oP '"tenant":"\K[^"]+' | sort | uniq -c
+  # If only alpha-capital: likely data issue. If all tenants: likely code/config issue.
+
+REMEDIATION
+-----------
+Step 1 — No approval needed:
+  Increase audit-service logging temporarily to capture full stack traces:
+    kubectl set env deployment/audit-service LOG_LEVEL=DEBUG -n prod
+  ⚠️ Set a 30-minute revert reminder immediately (DEBUG logging causes disk pressure — see sop_disk_storage_pressure.txt)
+
+Step 2 — Open investigation ticket (do NOT create incident ticket yet):
+  Title: "INVESTIGATION: audit-service unexpected SETTLED→PENDING_REVIEW transitions"
+  Include: trace_ids, timestamps, affected tenant, log line references
+  Do NOT raise P1/P2 ticket until root cause is confirmed
+
+Step 3 — Notify audit-service owner to review position state machine:
+  Share log evidence in #devops-incidents
+  Audit service owner must confirm whether SETTLED→PENDING_REVIEW is a bug or expected edge case
+
+Step 4 — Revert LOG_LEVEL after 30 minutes regardless of resolution:
+  kubectl set env deployment/audit-service LOG_LEVEL=INFO -n prod
+
+VALIDATION
+----------
+✅ No new "unexpected state transition" logs after root cause addressed
+✅ audit_event=POSITION_RECONCILE frequency returns to baseline (< 1/hour)
+✅ All state transitions have valid trace_ids (no "missing correlation ID")
+✅ Distributed tracing shows complete trace for audit events
+
+SAFETY RULES
+------------
+❌ Do NOT restart audit-service without audit-service owner approval — state machine is stateful
+❌ Do NOT rollback other services based solely on audit-service signals — it is an observer
+❌ Do NOT create JIRA incident ticket until root cause is confirmed (P3 = investigate, not act)
+✅ Always cross-reference with other service logs before concluding audit-service is the source
+✅ Preserve all log evidence before any LOG_LEVEL change obscures previous output
+
+ESCALATION
+----------
+0-30 min: SRE investigates, collects evidence, notifies audit-service owner
+30-60 min: Audit service owner reviews position state machine logic
+60+ min:  If POSITION_RECONCILE affecting live trading, escalate to engineering manager
+
+---
+
+INCIDENT REPORT: INC-010
+========================
+Date: 2026-05-08 | Duration: Investigation ongoing | Severity: P3
+Category: Unknown (incomplete evidence)
+Affected Services: audit-service
+Tenant: alpha-capital | Region: us-east-1 | env: prod
+
+TIMELINE
+--------
+10:10:00  audit-service running normally
+10:13:05  FIRST SIGNAL: missing correlation ID for state transition audit_event=POSITION_RECONCILE (audit-service, logger=audit)
+10:13:09  unexpected state transition old=SETTLED new=PENDING_REVIEW trace unavailable redacted stack trace (audit-service, logger=audit)
+10:13:20  incomplete trace; request additional telemetry before assigning root cause (audit-service, logger=audit)
+10:15:00  SRE notices signals during INC-009 investigation (same time window)
+10:16:00  Cross-reference: trace_ids from audit-service not found in payment-api or order-api logs
+10:18:00  Check: no recent deployments to audit-service in past 48 hours
+10:20:00  LOG_LEVEL=DEBUG enabled on audit-service for investigation
+10:30:00  Additional telemetry collected: 3 POSITION_RECONCILE events, all for same position ID P-44821
+10:35:00  Audit service owner notified: reviewing position state machine for P-44821
+10:50:00  LOG_LEVEL reverted to INFO
+10:55:00  Audit service owner confirms: SETTLED→PENDING_REVIEW is a valid edge case triggered by
+          a compliance review flag on position P-44821 set by risk-engine. Not a bug.
+          Missing correlation ID is a known gap — risk-engine does not propagate trace_id to audit events.
+
+ROOT CAUSE
+----------
+Not a system incident. audit-service correctly recorded a compliance-triggered state
+transition for position P-44821. The "unexpected" classification was because the
+audit-service signal rules flag SETTLED→PENDING_REVIEW as anomalous without context.
+The missing trace_id is a known technical debt: risk-engine does not propagate trace_id
+when triggering compliance review flags.
+
+RESOLUTION
+----------
+No remediation needed. Investigation closed.
+Technical debt ticket raised: risk-engine should propagate trace_id to audit events.
+
+FOLLOW-UP ACTIONS
+-----------------
+1. Add trace_id propagation from risk-engine to audit events [BACKLOG — low priority]
+2. Update audit-service signal rules to distinguish compliance reviews from genuine anomalies [BACKLOG]
+3. Document SETTLED→PENDING_REVIEW as expected edge case in audit-service runbook [DONE]
+
+EVIDENCE REFERENCES
+-------------------
+- audit-service pod: audit-service-7f9d
+- Position ID: P-44821
+- trace_id: trc-2025550998 (missing correlation), trc-4514148765 (unexpected state), trc-1996310885 (incomplete trace)
+- Log lines: ambiguous_mixed_window_02.jsonl lines 9-11

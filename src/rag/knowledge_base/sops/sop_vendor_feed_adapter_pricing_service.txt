@@ -1,0 +1,144 @@
+SOP: External Vendor Dependency Degradation — vendor-feed-adapter / pricing-service
+====================================================================================
+Stack: vendor-feed-adapter / pricing-service | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: External dependency | Severity: P2 | Owner: Data Platform Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=external.vendor on vendor-feed-adapter: "provider 5xx from marketdata-vendor status=503"
+- logger=external.vendor on pricing-service: "vendor latency p95=8900ms for marketdata-vendor; feed delayed by 6 minutes"
+- logger=external.vendor on pricing-service: "HTTP 429 from marketdata-vendor Retry-After=120 seconds throttling active"
+- vendor-feed-adapter or pricing-service receiving 429 or 5xx from marketdata-vendor for > 2 minutes
+
+SERVICES INVOLVED
+-----------------
+vendor-feed-adapter:  Adapter layer between internal platform and external marketdata-vendor API.
+                      Endpoint: /vendor/prices. Calls marketdata-vendor REST API.
+pricing-service:      Consumes vendor-feed-adapter output. Publishes pricing data to redis-cache.
+                      If vendor feed is delayed, pricing-service serves stale data.
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Check marketdata-vendor status page (bookmark this):
+   https://status.marketdata-vendor.example.com
+   Confirm whether this is a known provider incident before internal investigation.
+
+2. Quantify the error rate from vendor-feed-adapter:
+   kubectl logs -l app=vendor-feed-adapter -n prod --since=10m | grep -c "provider 5xx\|429"
+
+3. Check if retry storm is amplifying the outage:
+   kubectl logs -l app=vendor-feed-adapter -n prod --since=5m | grep "retry\|Retry-After" | wc -l
+   If > 50/min with Retry-After header present, the adapter is ignoring backoff instructions.
+
+4. Check pricing-service feed delay severity:
+   kubectl logs -l app=pricing-service -n prod --since=10m | grep "feed delayed"
+   Stale data threshold: > 10 minutes delayed = activate fallback
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — marketdata-vendor infrastructure outage:
+  Signal: "provider 5xx from marketdata-vendor status=503"
+  Cause: External provider having an outage — nothing to fix internally
+  Action: Enable stale data fallback, wait for provider recovery, open vendor ticket
+
+Pattern B — Rate limiting by marketdata-vendor:
+  Signal: "HTTP 429 from marketdata-vendor Retry-After=120 seconds throttling active"
+  Cause: Platform exceeded vendor API rate limit. Retry storm likely amplifying it.
+  Action: Respect Retry-After header, enable exponential backoff immediately
+
+Pattern C — Vendor latency degradation (not full outage):
+  Signal: "vendor latency p95=8900ms" without 503/429
+  Cause: Provider degraded but not down — slow responses timing out on platform side
+  Action: Enable stale data fallback if feed delay > 10 minutes
+
+REMEDIATION
+-----------
+Step 1 — No approval needed (always safe):
+  Enable stale data fallback on pricing-service:
+    kubectl set env deployment/pricing-service STALE_DATA_FALLBACK=true -n prod
+    kubectl set env deployment/pricing-service STALE_DATA_MAX_AGE_MINUTES=15 -n prod
+
+Step 2 — No approval needed (stop retry storm):
+  Enable Retry-After-aware backoff on vendor-feed-adapter:
+    kubectl set env deployment/vendor-feed-adapter RETRY_BACKOFF_BASE_MS=10000 -n prod
+    kubectl set env deployment/vendor-feed-adapter RETRY_MAX_ATTEMPTS=3 -n prod
+    kubectl set env deployment/vendor-feed-adapter RESPECT_RETRY_AFTER=true -n prod
+
+Step 3 — Vendor management action:
+  Open support ticket with marketdata-vendor including:
+  - Incident start time (UTC)
+  - Error samples: status=503, 429 Retry-After headers
+  - Request SLA credit if downtime > 15 minutes
+
+Step 4 — Revert fallback when vendor recovers:
+  kubectl set env deployment/pricing-service STALE_DATA_FALLBACK=false -n prod
+
+VALIDATION
+----------
+✅ vendor-feed-adapter: provider 5xx/429 rate drops to 0
+✅ pricing-service: "feed delayed" logs stop, vendor latency p95 < 500ms
+✅ redis-cache: pricing data freshness within 2 minutes of real time
+✅ marketdata-vendor status page shows green
+
+SAFETY RULES
+------------
+❌ Do NOT disable the vendor-feed-adapter entirely — pricing-service needs the connection to resume automatically
+❌ Do NOT retry without respecting Retry-After headers — amplifies provider recovery time
+✅ Always enable stale data fallback before any other action
+✅ Document vendor outage duration and error evidence for SLA credit claim
+
+ESCALATION
+----------
+0-5 min:  On-call SRE enables fallback
+5-15 min: Data platform lead + vendor management opens provider ticket
+15+ min:  Engineering manager if stale pricing data is impacting trade execution
+
+---
+
+INCIDENT REPORT: INC-009
+========================
+Date: 2026-05-08 | Duration: 34 minutes | Severity: P2
+Category: External dependency
+Affected Services: vendor-feed-adapter, pricing-service
+Tenant: alpha-capital | Region: us-east-1 | env: prod
+
+TIMELINE
+--------
+10:10:00  vendor-feed-adapter and pricing-service running normally
+10:11:02  FIRST SIGNAL: provider 5xx from marketdata-vendor status=503 body=Service Unavailable (vendor-feed-adapter, logger=external.vendor)
+10:11:07  vendor latency p95=8900ms for marketdata-vendor; feed delayed by 6 minutes (pricing-service, logger=external.vendor)
+10:11:12  HTTP 429 from marketdata-vendor Retry-After=120 seconds throttling active (pricing-service, logger=external.vendor)
+10:13:00  SRE paged: EXTERNAL_VENDOR_ERROR alert
+10:14:00  marketdata-vendor status page: "Degraded performance in us-east-1 region"
+10:15:00  Retry storm detected: vendor-feed-adapter issuing 280 retries/min ignoring Retry-After header
+10:16:00  STALE_DATA_FALLBACK=true enabled on pricing-service
+10:17:00  RETRY_BACKOFF_BASE_MS=10000 + RESPECT_RETRY_AFTER=true set on vendor-feed-adapter
+10:18:00  Retry rate drops from 280/min to 8/min
+10:30:00  marketdata-vendor status page: "Incident resolved"
+10:35:00  vendor-feed-adapter reconnects, processing rate normalises
+10:45:00  STALE_DATA_FALLBACK disabled. pricing-service serving live data. PagerDuty resolves.
+
+ROOT CAUSE
+----------
+marketdata-vendor had an infrastructure incident in us-east-1. vendor-feed-adapter's
+retry logic was not honouring the Retry-After: 120 header, issuing 280 retries/min
+which worsened the provider's recovery. pricing-service served stale pricing data for
+34 minutes with fallback enabled, within acceptable SLA.
+
+RESOLUTION
+----------
+Enabled stale data fallback on pricing-service. Fixed retry logic on vendor-feed-adapter
+to respect Retry-After headers. Raised vendor support ticket for SLA credit.
+
+FOLLOW-UP ACTIONS
+-----------------
+1. Implement Retry-After header respect in vendor-feed-adapter HTTP client [DONE]
+2. Add auto-trigger: STALE_DATA_FALLBACK when vendor 5xx rate > 30% for 2 minutes [DONE]
+3. Add vendor SLA breach tracker to monthly review [IN PROGRESS]
+
+EVIDENCE REFERENCES
+-------------------
+- vendor-feed-adapter pod: vendor-feed-adapter-7f9d
+- pricing-service pod: pricing-service-7f9d
+- trace_id: trc-6124484325 (first 503)
+- Log lines: ambiguous_mixed_window_02.jsonl lines 6-8

@@ -1,0 +1,6 @@
+Category: Unknown / Incomplete Telemetry
+Signals: missing correlation ID, incomplete trace, unexpected state transition, redacted stack trace
+Severity hint: P3
+Action: Do NOT create a JIRA ticket automatically. Notify SRE on-call. Request additional telemetry.
+Do not assign root cause without complete trace data.
+Escalation: if state transition involves financial settlement (SETTLED, PENDING_REVIEW), escalate to domain lead.
