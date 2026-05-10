@@ -1,0 +1,30 @@
+SOP: Deployment Regression and Canary Failure
+Category: Deployment regression | Severity: P1/P2 | Owner: Release Manager
+
+Symptoms:
+- Rollout started shortly before incident
+- Canary failed or error budget burn high
+- Feature flag or configmap changed
+- New version only shows errors
+- Rollback recommended
+
+Diagnostics:
+- Compare errors before and after rollout start
+- Inspect canary metrics against stable pods
+- Review config and feature flag diffs
+- Confirm the failing version, route, and affected services
+
+Remediation:
+- Pause rollout immediately
+- Roll back bad version with release-manager approval
+- Disable feature flag if it is the smallest safe rollback
+- Freeze further rollout until RCA is complete
+
+Validation:
+- Error rate drops after rollback or flag disablement
+- Canary health returns to green
+- Stable version serves traffic successfully
+
+Safety:
+- Confirm correlation before declaring causation
+- Preserve rollout event and canary metric evidence

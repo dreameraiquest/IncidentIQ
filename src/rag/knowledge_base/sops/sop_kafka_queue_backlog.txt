@@ -1,0 +1,31 @@
+SOP: Kafka Queue Backlog and DLQ Growth
+Category: Queue backlog | Severity: P2 | Owner: Data Platform Team
+
+Symptoms:
+- Consumer lag rising
+- DLQ growth detected
+- Retry topic depth increasing
+- Poison message key observed
+- Rebalance loop
+
+Diagnostics:
+- Check consumer lag by topic and partition
+- Inspect DLQ samples for poison-message pattern
+- Verify consumer pod restarts and rebalance frequency
+- Confirm producer rate versus consumer throughput
+
+Remediation:
+- Scale consumers only when no poison message is active
+- Pause producer or quarantine poison messages if retry storm is active
+- Scale consumers to zero before skipping a poison offset
+- Replay DLQ only after parser or schema fix is deployed
+
+Validation:
+- Consumer lag decreases
+- DLQ growth stops
+- Rebalance frequency returns to normal
+- Consumer processing rate exceeds producer rate
+
+Safety:
+- Do not replay poison messages before fixing the parser
+- Require data-platform approval before skipping offsets

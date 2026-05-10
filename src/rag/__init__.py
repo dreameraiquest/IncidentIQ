@@ -1,3 +1,3 @@
-from .rag_retriever import retrieve_rag_context, ingest
+from .rag_retriever import ingest, retrieve_rag_context
 
-__all__ = ["retrieve_rag_context", "ingest"]
+__all__ = ["ingest", "retrieve_rag_context"]

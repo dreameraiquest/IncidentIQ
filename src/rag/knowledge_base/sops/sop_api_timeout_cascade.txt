@@ -1,0 +1,29 @@
+SOP: API Timeout and Upstream Latency Cascade
+Category: API timeout | Severity: P2 | Owner: Platform Team
+
+Symptoms:
+- HTTP 504 from nginx-gateway
+- Upstream timed out while reading response headers
+- p95 or p99 latency breach
+- Circuit breaker open or retry amplification
+
+Diagnostics:
+- Identify the slow upstream service for the gateway route
+- Check downstream database, cache, queue, and external provider health
+- Compare timeout onset with deployment and traffic changes
+- Inspect traces for where latency is introduced
+
+Remediation:
+- Degrade non-critical routes or throttle noisy callers
+- Fix the downstream root cause before increasing gateway timeouts
+- Pause retries if they amplify the incident
+- Roll back recent latency-causing changes after owner approval
+
+Validation:
+- Gateway 504 rate drops
+- Upstream p95 latency normalizes
+- Circuit breaker closes and stays closed
+
+Safety:
+- Do not hide a real outage by only increasing timeout values
+- Confirm the downstream owner agrees before changing timeout policy

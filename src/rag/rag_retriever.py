@@ -1,269 +1,197 @@
-# src/rag/rag_retriever.py
-# ─────────────────────────────────────────────────────────────────────────────
-# Drop-in RAG implementation for the IncidentIQ pipeline.
-#
-# This module is designed to be called by the notebook's retrieve_runbook_context
-# It adds a real FAISS + LangChain + OpenAI retrieval system.
-# with lexical RUNBOOKS as fallback
-#
-# ─────────────────────────────────────────────────────────────────────────────
-
+import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# ── LangChain imports ─────────────────────────────────────────────────────────
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import TextLoader, PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Config — all paths relative to repo root so it works both locally and in Colab
-# ─────────────────────────────────────────────────────────────────────────────
-_REPO_ROOT       = Path(__file__).resolve().parents[2]          # IncidentIQ/
-KNOWLEDGE_BASE   = _REPO_ROOT / "knowledge_base"                # IncidentIQ/knowledge_base/
-FAISS_INDEX_PATH = _REPO_ROOT / "src" / "rag" / "faiss_index"  # IncidentIQ/src/rag/faiss_index/
+RAG_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = RAG_ROOT.parents[1]
+KNOWLEDGE_BASE = Path(os.getenv("INCIDENTIQ_KB_DIR", str(RAG_ROOT / "knowledge_base")))
+FAISS_INDEX_PATH = Path(os.getenv("INCIDENTIQ_FAISS_INDEX_PATH", str(RAG_ROOT / "faiss_index")))
 
-CHUNK_SIZE      = 800
-CHUNK_OVERLAP   = 100
-TOP_K           = 5
-SCORE_THRESHOLD = 0.4   # below this → "low" confidence
+TOP_K = int(os.getenv("INCIDENTIQ_RAG_TOP_K", "5"))
 
-# ── Model init (lazy — only if OPENROUTER_API_KEY is set) ─────────────────────
-def _get_embeddings():
-    from langchain_huggingface import HuggingFaceEmbeddings
-    return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-def _get_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        model="openai/gpt-4o-mini",
-        openai_api_key=os.environ["OPENROUTER_API_KEY"],
-        openai_api_base="https://openrouter.ai/api/v1",
-        temperature=0,
-    )
+def _tokenize(text: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9_/.-]+", text.lower()) if len(token) > 2}
 
-RAG_PROMPT = PromptTemplate(
-    input_variables=["context", "question"],
-    template="""You are a DevOps incident analysis assistant.
-Using ONLY the context below (past incident reports, SOPs, runbooks),
-answer the question concisely and precisely.
-If the context does not contain enough information, say so clearly.
 
-Context:
-{context}
-
-Question:
-{question}
-
-Answer (include root cause, resolution steps, and relevant SOP references):""",
-)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ingestion  (run once to build the FAISS index from knowledge_base/)
-# ─────────────────────────────────────────────────────────────────────────────
-def ingest(knowledge_base_dir: Optional[Path] = None, index_path: Optional[Path] = None) -> None:
-    """
-    Load all .txt and .pdf files from knowledge_base/, embed them, and
-    save a FAISS index to src/rag/faiss_index/.
-
-    Call this once before running the notebook pipeline, or whenever you add
-    new documents to knowledge_base/.
-
-    Usage (from repo root):
-        python -c "from src.rag.rag_retriever import ingest; ingest()"
-    """
-    kb_dir  = knowledge_base_dir or KNOWLEDGE_BASE
-    idx_dir = index_path or FAISS_INDEX_PATH
-
-    import glob
-    all_docs = []
-    pattern  = str(kb_dir / "**" / "*.*")
-    files    = glob.glob(pattern, recursive=True)
-
-    if not files:
-        raise FileNotFoundError(
-            f"No files found under '{kb_dir}'. "
-            "Add .txt or .pdf documents to the knowledge_base/ folder."
-        )
-
-    for fp in files:
-        if not Path(fp).is_file():
+def _read_docs(knowledge_base_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    kb_dir = Path(knowledge_base_dir or KNOWLEDGE_BASE)
+    docs = []
+    if not kb_dir.exists():
+        return docs
+    for path in sorted(kb_dir.rglob("*")):
+        if path.suffix.lower() not in {".txt", ".md"} or not path.is_file():
             continue
-        ext = Path(fp).suffix.lower()
-        try:
-            if ext == ".txt":
-                loader = TextLoader(fp, encoding="utf-8")
-            elif ext == ".pdf":
-                loader = PyPDFLoader(fp)
-            else:
-                print(f"  [SKIP] {fp}")
-                continue
-            docs = loader.load()
-            for doc in docs:
-                doc.metadata["source"] = fp
-            all_docs.extend(docs)
-            print(f"  [LOAD] {fp}  ({len(docs)} doc(s))")
-        except Exception as e:
-            print(f"  [ERROR] {fp}: {e}")
+        content = path.read_text(encoding="utf-8", errors="replace")
+        docs.append(
+            {
+                "title": _title_from_content(path, content),
+                "source": str(path),
+                "content": content,
+                "incident_type": _field_from_content(content, "Category") or _infer_category(content),
+                **_extract_sections(content),
+            }
+        )
+    return docs
 
-    print(f"\n✅  Loaded {len(all_docs)} document(s)")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ".", " ", ""],
+def _title_from_content(path: Path, content: str) -> str:
+    for line in content.splitlines():
+        stripped = line.strip("# ").strip()
+        if stripped:
+            return stripped[:120]
+    return path.name
+
+
+def _field_from_content(content: str, label: str) -> str:
+    match = re.search(rf"^{re.escape(label)}:\s*(.+)$", content, re.I | re.M)
+    if not match:
+        return ""
+    return match.group(1).split("|")[0].strip()
+
+
+def _infer_category(content: str) -> str:
+    low = content.lower()
+    mapping = {
+        "Database": ["hikari", "postgres", "connection pool", "jdbc"],
+        "Authentication": ["jwt", "issuer", "jwk", "rbac", "token"],
+        "Queue backlog": ["kafka", "consumer lag", "dlq", "poison message"],
+        "Disk/storage": ["disk", "storage", "logrotate", "no space"],
+        "Deployment regression": ["deployment", "canary", "rollback", "feature flag"],
+        "API timeout": ["504", "timeout", "gateway", "latency"],
+        "Memory/CPU": ["oom", "memory", "cpu", "heap", "gc"],
+        "External dependency": ["vendor", "provider", "429", "rate limit"],
+        "Network": ["dns", "tls", "network", "connection reset"],
+    }
+    for category, terms in mapping.items():
+        if any(term in low for term in terms):
+            return category
+    return "Unknown"
+
+
+def _extract_sections(content: str) -> Dict[str, List[str]]:
+    sections = {
+        "diagnostics": [],
+        "remediation": [],
+        "validation": [],
+        "safety_notes": [],
+        "symptoms": [],
+    }
+    current = None
+    aliases = {
+        "diagnostics": "diagnostics",
+        "diagnosis": "diagnostics",
+        "triage": "diagnostics",
+        "checks": "diagnostics",
+        "remediation": "remediation",
+        "actions": "remediation",
+        "resolution": "remediation",
+        "fix": "remediation",
+        "validation": "validation",
+        "verify": "validation",
+        "verification": "validation",
+        "safety": "safety_notes",
+        "safety notes": "safety_notes",
+        "symptoms": "symptoms",
+    }
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        heading = line.strip(":").lower()
+        if heading in aliases:
+            current = aliases[heading]
+            continue
+        if line.endswith(":") and line[:-1].strip().lower() in aliases:
+            current = aliases[line[:-1].strip().lower()]
+            continue
+        if current and (line.startswith("-") or line[0:2].isdigit()):
+            item = re.sub(r"^[-*\d.\s]+", "", line).strip()
+            if item:
+                sections[current].append(item)
+    return sections
+
+
+def _build_query(cluster: Dict[str, Any]) -> str:
+    evidence_text = " ".join(e.get("message", "") for e in cluster.get("evidence", [])[:6] if e.get("message"))
+    return " ".join(
+        [
+            cluster.get("candidate_category", ""),
+            cluster.get("signature", ""),
+            " ".join(cluster.get("affected_services", [])),
+            evidence_text,
+        ]
     )
-    chunks = splitter.split_documents(all_docs)
-    print(f"✅  Split into {len(chunks)} chunk(s)")
 
-    print("⏳  Embedding and building FAISS index …")
-    embeddings  = _get_embeddings()
+
+def _score_doc(query_tokens: set[str], cluster: Dict[str, Any], doc: Dict[str, Any]) -> float:
+    doc_tokens = _tokenize(" ".join([doc.get("title", ""), doc.get("incident_type", ""), doc.get("content", "")]))
+    overlap = len(query_tokens & doc_tokens)
+    score = float(overlap)
+    if doc.get("incident_type") == cluster.get("candidate_category"):
+        score += 8.0
+    for service in cluster.get("affected_services", []):
+        if service.lower() in doc.get("content", "").lower():
+            score += 1.5
+    return score
+
+
+def retrieve_rag_context(analysis_context: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    docs = _read_docs()
+    if not docs:
+        return {}
+    result: Dict[str, List[Dict[str, Any]]] = {}
+    for cluster in analysis_context.get("clusters", []):
+        cluster_id = cluster.get("cluster_id", "unknown")
+        query_tokens = _tokenize(_build_query(cluster))
+        scored = []
+        for doc in docs:
+            score = _score_doc(query_tokens, cluster, doc)
+            if score <= 0:
+                continue
+            item = dict(doc)
+            item["score"] = round(score, 3)
+            scored.append(item)
+        scored.sort(key=lambda item: -item["score"])
+        result[cluster_id] = scored[:TOP_K]
+    return result
+
+
+def ingest(knowledge_base_dir: Optional[Path] = None, index_path: Optional[Path] = None) -> None:
+    """Build a FAISS index when optional vector dependencies are installed.
+
+    The runtime does not require this. If dependencies are unavailable, lexical
+    retrieval from the same knowledge base remains the fallback path.
+    """
+    kb_dir = Path(knowledge_base_dir or KNOWLEDGE_BASE)
+    idx_dir = Path(index_path or FAISS_INDEX_PATH)
+    try:
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        from langchain_community.document_loaders import TextLoader
+        from langchain_community.vectorstores import FAISS
+        from langchain_huggingface import HuggingFaceEmbeddings
+    except Exception as exc:
+        raise RuntimeError(f"Optional FAISS dependencies are not installed: {exc}") from exc
+
+    docs = []
+    for path in sorted(kb_dir.rglob("*.txt")):
+        loaded = TextLoader(str(path), encoding="utf-8").load()
+        for doc in loaded:
+            doc.metadata["source"] = str(path)
+        docs.extend(loaded)
+    if not docs:
+        raise FileNotFoundError(f"No .txt documents found under {kb_dir}")
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+    chunks = splitter.split_documents(docs)
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     vectorstore = FAISS.from_documents(chunks, embeddings)
     idx_dir.mkdir(parents=True, exist_ok=True)
     vectorstore.save_local(str(idx_dir))
-    print(f"✅  FAISS index saved to '{idx_dir}'")
 
 
-def _load_vectorstore() -> FAISS:
-    if not FAISS_INDEX_PATH.exists():
-        raise FileNotFoundError(
-            f"FAISS index not found at '{FAISS_INDEX_PATH}'. "
-            "Run ingest() first:  python -c \"from src.rag.rag_retriever import ingest; ingest()\""
-        )
-    return FAISS.load_local(
-        str(FAISS_INDEX_PATH),
-        _get_embeddings(),
-        allow_dangerous_deserialization=True,
-    )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Query builder  — converts an EvidenceCluster dict into a rich search query
-# ─────────────────────────────────────────────────────────────────────────────
-def _build_query(cluster: Dict[str, Any]) -> str:
-    """
-    The notebook's Classifier Agent already structured the cluster for us.
-    We extract the most signal-rich fields to form a natural-language query.
-    """
-    category  = cluster.get("candidate_category", "unknown")
-    services  = ", ".join(cluster.get("affected_services", [])) or "unknown service"
-    severity  = cluster.get("severity_hint", "unknown")
-    signature = cluster.get("signature", "")
-    # Pull top evidence messages for richer semantic search
-    evidence_text = " | ".join(
-        e.get("message", "")
-        for e in cluster.get("evidence", [])[:5]
-        if e.get("message")
-    )
-    return (
-        f"Incident type: {category}\n"
-        f"Affected services: {services}\n"
-        f"Severity: {severity}\n"
-        f"Signal signature: {signature}\n"
-        f"Evidence: {evidence_text}"
-    )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Per-cluster retrieval  — returns chunks in the format the notebook expects
-# ─────────────────────────────────────────────────────────────────────────────
-def _retrieve_for_cluster(
-    cluster: Dict[str, Any],
-    vectorstore: FAISS,
-    top_k: int = TOP_K,
-) -> List[Dict[str, Any]]:
-    """
-    Retrieve the top-K most relevant runbook/SOP chunks for one cluster.
-
-    Returns a list of dicts that mirror the embedded RUNBOOKS format so the
-    fallback_remediation_agent() in the notebook can consume them unchanged:
-        [{"title", "source", "score", "diagnostics", "remediation",
-          "validation", "safety_notes", "rag_answer"}, ...]
-    """
-    query   = _build_query(cluster)
-    results = vectorstore.similarity_search_with_relevance_scores(query, k=top_k)
-
-    chunks = []
-    top_score = 0.0
-    for doc, score in results:
-        top_score = max(top_score, score)
-        chunks.append({
-            "title":       Path(doc.metadata.get("source", "unknown")).name,
-            "source":      doc.metadata.get("source", "unknown"),
-            "score":       round(score, 4),
-            "content":     doc.page_content,
-            # These keys are read by fallback_remediation_agent() — populate
-            # with empty lists; the LLM synthesised answer goes in rag_answer.
-            "diagnostics":   [],
-            "remediation":   [],
-            "validation":    [],
-            "safety_notes":  [],
-            "incident_type": cluster.get("candidate_category", ""),
-            "symptoms":      [],
-        })
-
-    # Sort best first
-    chunks.sort(key=lambda x: x["score"], reverse=True)
-
-    # filter out chunks if they score less than SCORE_THRESHOLD
-    chunks = [c for c in chunks if c["score"] >= SCORE_THRESHOLD] or chunks[:1]
-
-    # LLM-synthesised answer over all retrieved chunks (optional, needs API key)
-    if os.getenv("OPENROUTER_API_KEY") and chunks:
-        try:
-            retriever  = vectorstore.as_retriever(search_kwargs={"k": top_k})
-            qa_chain   = RetrievalQA.from_chain_type(
-                llm=_get_llm(),
-                chain_type="stuff",
-                retriever=retriever,
-                chain_type_kwargs={"prompt": RAG_PROMPT},
-            )
-            rag_answer = qa_chain.invoke({"query": query})["result"]
-            # Inject the synthesised answer into the top chunk so the
-            # Remediation Agent has a ready-made summary to use.
-            if chunks:
-                chunks[0]["rag_answer"] = rag_answer
-        except Exception as e:
-            print(f"  [RAG LLM warning] {e}")
-
-    return chunks
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Public interface  — called by retrieve_runbook_context in the notebook
-# ─────────────────────────────────────────────────────────────────────────────
-def retrieve_rag_context(analysis_context: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Main entry point.  Matches the signature the notebook expects:
-
-    Input:
-        {"run_id": str, "clusters": [EvidenceCluster as dict, ...]}
-
-    Output:
-        {cluster_id: [runbook_chunk_dict, ...], ...}
-
-    Falls back gracefully to an empty dict if the FAISS index is not ready,
-    so the notebook's embedded RUNBOOKS fallback still kicks in.
-    """
-    if not os.getenv("OPENROUTER_API_KEY"):
-        print("  [RAG] No OPENROUTER_API_KEY found — skipping FAISS retrieval, notebook fallback will run.")
-        return {}
-
-    try:
-        vectorstore = _load_vectorstore()
-    except FileNotFoundError as e:
-        print(f"  [RAG] {e}")
-        print("  [RAG] Falling back to notebook embedded runbooks.")
-        return {}
-
-    rag_context: Dict[str, List[Dict[str, Any]]] = {}
-    for cluster in analysis_context.get("clusters", []):
-        cluster_id = cluster.get("cluster_id", "unknown")
-        try:
-            rag_context[cluster_id] = _retrieve_for_cluster(cluster, vectorstore)
-            print(f"  [RAG] {cluster_id} → {len(rag_context[cluster_id])} chunk(s) retrieved")
-        except Exception as e:
-            print(f"  [RAG] {cluster_id} retrieval error: {e}")
-            rag_context[cluster_id] = []
-
-    return rag_context
+def dump_debug_context(path: str, analysis_context: Dict[str, Any]) -> None:
+    Path(path).write_text(json.dumps(retrieve_rag_context(analysis_context), indent=2), encoding="utf-8")

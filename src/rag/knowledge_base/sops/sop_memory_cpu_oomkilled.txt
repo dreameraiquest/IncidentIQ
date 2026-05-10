@@ -1,0 +1,31 @@
+SOP: Memory / CPU Saturation
+Category: Memory/CPU | Severity: P1 | Owner: Service Owner
+
+Symptoms:
+- OOMKilled or exit code 137
+- Heap usage near limit
+- GC pause spike
+- CPU throttling or restart loop
+- Back-off restarting failed container
+
+Diagnostics:
+- Check pod restart count and termination reason
+- Inspect memory, heap, CPU throttling, and GC metrics
+- Compare recent deploys and traffic changes
+- Capture heap dump or core evidence when safe
+
+Remediation:
+- Roll back a leak-inducing release when correlated with deploy
+- Scale replicas if downstream dependencies can absorb the load
+- Increase limits only after profiling or capacity review
+- Reduce workload or disable high-memory features if available
+
+Validation:
+- Restart rate falls
+- Memory and CPU return below thresholds
+- GC pauses normalize
+- Error budget burn stops increasing
+
+Safety:
+- Do not restart repeatedly without preserving diagnostics
+- Avoid scaling both traffic and memory changes at the same time
