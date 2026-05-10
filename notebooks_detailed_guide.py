@@ -296,7 +296,8 @@ mapping_data = [
     ['agents/', 'src/agents/', 'LLM agents (Classifier, RCA, Timeline, etc.)'],
     ['graph/', 'src/graph/', 'LangGraph state, nodes, builder, runner'],
     ['reporting/', 'src/reporting/', 'Markdown, JSON, CSV, previews, bundles'],
-    ['evals/', 'src/evals/', 'GroundTruthLoader, scorer, metrics']
+    ['evals/', 'src/evals/', 'GroundTruthLoader, scorer, metrics'],
+    ['integrations/', 'src/integrations/', 'n8n webhooks (Slack, JIRA)']
 ]
 
 mapping_table = Table(mapping_data, colWidths=[1.8*inch, 1.8*inch, 2.4*inch])
@@ -418,7 +419,9 @@ features = [
     ("Agent-Based Reasoning",
      "Classifier (category & severity), Timeline (chronology), RCA (root cause), Remediation, Critic"),
     ("Output Generation",
-     "Markdown reports, JSON/CSV exports, Slack/Teams previews, JIRA/GitHub previews, cookbooks"),
+     "Outputs: Markdown reports, JSON/CSV exports, Slack/Teams previews, JIRA/GitHub previews, cookbooks"),
+    ("n8n Integration",
+     "Out-of-the-box support for n8n webhooks to dispatch Slack notifications and JIRA tickets"),
     ("Evaluation/Scoring",
      "Load ground truth, score category accuracy, severity accuracy, evidence grounding"),
 ]

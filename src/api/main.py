@@ -1,8 +1,13 @@
+import sys
+import os
+from pathlib import Path
+
+# Add the project root to sys.path so we can import from src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from typing import List, Optional
 import shutil
-import os
-from pathlib import Path
 from dotenv import load_dotenv
 from src import analyze_uploaded_logs, AnalysisResponse
 

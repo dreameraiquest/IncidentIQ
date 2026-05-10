@@ -1,0 +1,7 @@
+AUTH_FAILURE: Check gateway logs. Rotate tokens. Check JWT issuer mismatch.
+TIMEOUT: Check DB connection pool. Increase HikariCP maximumPoolSize.
+MEMORY_PRESSURE: Check pod heap dump. Scale memory resources in deployment.yaml.
+REDIS_OOM: Flush volatile keys. Check eviction policy.
+DISK_FULL: Clean up /tmp logs. Verify logrotate configuration.
+KAFKA_LAG: Increase partition count. Verify consumer health.
+API_504: Check upstream service latency. Increase circuit breaker timeout.

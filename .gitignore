@@ -1,10 +1,20 @@
+# Environments
+.env
+.venv
+venv/
+env/
 __pycache__/
 *.pyc
-.env
-*.log
-venv/
-.ipynb_checkpoints/
-outputs/
-.venv/
-src/rag/faiss_index/
 
+# IncidentIQ Work Data
+incidentiq_work/
+runs/
+*.log
+*.zip
+
+# VS Code / IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
