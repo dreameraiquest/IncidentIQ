@@ -17,7 +17,15 @@ def copy_file(src: Path, dest: Path) -> None:
 def copy_tree(src: Path, dest: Path) -> None:
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(src, dest)
+    shutil.copytree(
+        src,
+        dest,
+        ignore=shutil.ignore_patterns(
+            "__pycache__",
+            "*.pyc",
+            ".DS_Store",
+        ),
+    )
 
 
 def build_bundle(output_dir: Path) -> Path:
@@ -25,20 +33,11 @@ def build_bundle(output_dir: Path) -> Path:
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    copy_file(REPO_ROOT / "deploy" / "hf-space" / "app.py", output_dir / "app.py")
+    copy_file(REPO_ROOT / "app.py", output_dir / "app.py")
     copy_file(REPO_ROOT / "deploy" / "hf-space" / "README.md", output_dir / "README.md")
-    copy_file(REPO_ROOT / "deploy" / "hf-space" / "requirements.txt", output_dir / "requirements.txt")
+    copy_file(REPO_ROOT / "requirements.txt", output_dir / "requirements.txt")
 
-    copy_file(REPO_ROOT / "src" / "__init__.py", output_dir / "src" / "__init__.py")
-    copy_file(REPO_ROOT / "src" / "pipeline.py", output_dir / "src" / "pipeline.py")
-
-    copy_file(REPO_ROOT / "src" / "graph" / "__init__.py", output_dir / "src" / "graph" / "__init__.py")
-    copy_file(REPO_ROOT / "src" / "graph" / "runner.py", output_dir / "src" / "graph" / "runner.py")
-    copy_file(REPO_ROOT / "src" / "graph" / "nodes.py", output_dir / "src" / "graph" / "nodes.py")
-
-    copy_file(REPO_ROOT / "src" / "rag" / "__init__.py", output_dir / "src" / "rag" / "__init__.py")
-    copy_file(REPO_ROOT / "src" / "rag" / "rag_retriever.py", output_dir / "src" / "rag" / "rag_retriever.py")
-    copy_tree(REPO_ROOT / "src" / "rag" / "knowledge_base", output_dir / "src" / "rag" / "knowledge_base")
+    copy_tree(REPO_ROOT / "src", output_dir / "src")
 
     return output_dir
 

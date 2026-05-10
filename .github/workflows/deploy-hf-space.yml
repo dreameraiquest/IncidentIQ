@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "app.py"
+      - "requirements.txt"
       - "src/**"
       - "deploy/hf-space/**"
       - "scripts/build_hf_space_bundle.py"
@@ -13,6 +14,7 @@ on:
       - main
     paths:
       - "app.py"
+      - "requirements.txt"
       - "src/**"
       - "deploy/hf-space/**"
       - "scripts/build_hf_space_bundle.py"
@@ -45,7 +47,7 @@ jobs:
       - name: Smoke test Space app import
         run: |
           cd .hf-space-build
-          python -c "from app import demo; print(type(demo).__name__)"
+          python -c "import app; demo = app.build_app(); print(type(demo).__name__)"
 
       - name: Validate deploy configuration
         if: github.event_name != 'pull_request'

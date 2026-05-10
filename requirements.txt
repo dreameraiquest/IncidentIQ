@@ -4,10 +4,11 @@ langchain-openai==0.3.19
 langchain-community==0.3.24
 langchain-huggingface==0.1.2
 openai==1.82.0
-pydantic==2.11.4
+pydantic>=2.11,<3
 faiss-cpu==1.10.0
 sentence-transformers==3.4.1
 pandas
+requests
 streamlit
 jupyter
 uvicorn==0.34.2

@@ -1,6 +1,6 @@
 # Hugging Face Space CI/CD Setup
 
-This repo includes a GitHub Actions workflow that assembles a slim Space bundle and force-pushes it to a Hugging Face Space.
+This repo includes a GitHub Actions workflow that assembles a Space bundle from the root `app.py`, root `requirements.txt`, and the full `src/` package, then force-pushes it to a Hugging Face Space.
 
 ## 1. Create the Space
 
@@ -51,3 +51,5 @@ The generated bundle will be written to:
 ```text
 .hf-space-build/
 ```
+
+The deploy bundle intentionally uses the root app and requirements files so the Hugging Face Space receives the same UI and dependency changes that are committed to the main repo.
