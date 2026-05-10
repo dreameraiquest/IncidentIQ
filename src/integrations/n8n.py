@@ -6,12 +6,52 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# ── Issue 1 Fix: Fail loudly if URLs are missing ──────────────────
-SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
-JIRA_WEBHOOK_URL  = os.getenv("JIRA_WEBHOOK_URL")
+WEBHOOK_ALIASES = {
+    "slack": ("SLACK_WEBHOOK_URL", "N8N_SLACK_WEBHOOK_URL"),
+    "jira": ("JIRA_WEBHOOK_URL", "N8N_JIRA_WEBHOOK_URL"),
+}
 
-# Note: We don't raise ValueError here so the app doesn't crash on startup 
-# if the user hasn't set them yet, but we will skip the calls with a clear message.
+
+def _get_webhook_url(kind: str) -> tuple[str, str]:
+    """Read webhook secrets at call time so Hugging Face restarts pick them up cleanly."""
+    for name in WEBHOOK_ALIASES[kind]:
+        value = os.getenv(name)
+        if value:
+            return value, name
+    return "", WEBHOOK_ALIASES[kind][0]
+
+
+def _post_webhook(kind: str, payload: Dict[str, Any], timeout: int) -> str:
+    url, env_name = _get_webhook_url(kind)
+    if not url:
+        aliases = ", ".join(WEBHOOK_ALIASES[kind])
+        return f"Skipped - missing Space secret ({aliases})"
+
+    outbound_payload = payload
+    if kind == "slack" and "hooks.slack.com/" in url:
+        outbound_payload = {
+            "text": (
+                f"*IncidentIQ Alert*\\n"
+                f"*Severity:* {payload.get('severity')}\\n"
+                f"*Service:* {payload.get('service')}\\n"
+                f"*Symptom:* {payload.get('symptom')}\\n"
+                f"*Next step:* {payload.get('nextsteps')}"
+            )
+        }
+
+    try:
+        response = requests.post(url, json=outbound_payload, timeout=timeout)
+    except requests.RequestException as exc:
+        return f"Failed - request error via {env_name}: {exc}"
+
+    if response.status_code < 300:
+        return f"Success via {env_name}"
+
+    body = response.text.replace("\n", " ").strip()
+    if len(body) > 180:
+        body = body[:177] + "..."
+    detail = f": {body}" if body else ""
+    return f"Error {response.status_code} via {env_name}{detail}"
 
 def send_incident_to_n8n(incident: Dict[str, Any]) -> Dict[str, str]:
     """Send a single incident to n8n webhooks for Slack + JIRA dispatch."""
@@ -43,29 +83,15 @@ def send_incident_to_n8n(incident: Dict[str, Any]) -> Dict[str, str]:
 
     results = {}
 
-    # ── Slack via n8n ─────────────────────────────────────────
-    if SLACK_WEBHOOK_URL:
-        try:
-            r = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=5)
-            results["slack"] = "Success" if r.status_code < 300 else f"Error {r.status_code}"
-            print(f"[n8n Slack] {severity} — {r.status_code}")
-        except Exception as e:
-            results["slack"] = f"Failed: {str(e)}"
-    else:
-        results["slack"] = "Skipped — SLACK_WEBHOOK_URL not set in .env"
+    # Slack via n8n
+    results["slack"] = _post_webhook("slack", payload, timeout=10)
 
-    # ── JIRA via n8n ──────────────────────────────────────────
+    # JIRA via n8n
     # Only send high-severity incidents to JIRA to avoid noise
-    if JIRA_WEBHOOK_URL and severity.upper() in ["CRITICAL", "HIGH", "P1", "P2"]:
-        try:
-            r = requests.post(JIRA_WEBHOOK_URL, json=payload, timeout=10)
-            results["jira"] = "Success" if r.status_code < 300 else f"Error {r.status_code}"
-            print(f"[n8n JIRA] {severity} — {r.status_code}")
-        except Exception as e:
-            results["jira"] = f"Failed: {str(e)}"
+    if severity.upper() in ["CRITICAL", "HIGH", "P1", "P2"]:
+        results["jira"] = _post_webhook("jira", payload, timeout=15)
     else:
-        status = "Skipped — URL not set" if not JIRA_WEBHOOK_URL else f"Skipped — Low severity ({severity})"
-        results["jira"] = status
+        results["jira"] = f"Skipped - low severity ({severity})"
 
     return results
 

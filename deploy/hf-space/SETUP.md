@@ -33,6 +33,54 @@ JIRA_BASE_URL=https://jira.example.com
 JIRA_PROJECT_KEY=OPS
 ```
 
+Do not use local machine paths such as `/Users/...` in Hugging Face. Use these cloud-safe values instead:
+
+```text
+INCIDENTIQ_WORK_ROOT=/tmp/incidentiq_work
+workDir=src/rag
+GRADIO_SERVER_NAME=0.0.0.0
+```
+
+You can omit `PORT` on Hugging Face because the Space runtime manages the public port for Gradio.
+
+Add these as Hugging Face Space **Secrets** when you want LLM judging and observability:
+
+```text
+OPENROUTER_API_KEY=<rotated-openrouter-key>
+OPENAI_API_KEY=<rotated-openrouter-or-openai-key>
+LANGSMITH_API_KEY=<rotated-langsmith-key>
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=incidentiq
+```
+
+Add these as Hugging Face Space **Variables** for Jira preview labels:
+
+```text
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_PROJECT_KEY=<project-key>
+SLACK_CHANNEL=#devops-incidents
+```
+
+Add these as Hugging Face Space **Secrets** when you want real n8n dispatch:
+
+```text
+SLACK_WEBHOOK_URL=https://your-n8n-host/webhook/slack...
+JIRA_WEBHOOK_URL=https://your-n8n-host/webhook/jira...
+```
+
+`SLACK_WEBHOOK_URL` can also be a direct Slack Incoming Webhook URL (`https://hooks.slack.com/...`). `JIRA_WEBHOOK_URL` should be an n8n webhook or a Jira Automation incoming webhook that accepts JSON.
+
+Alias names are also supported:
+
+```text
+N8N_SLACK_WEBHOOK_URL=https://your-n8n-host/webhook/slack...
+N8N_JIRA_WEBHOOK_URL=https://your-n8n-host/webhook/jira...
+```
+
+After changing Space secrets, restart the Space from Hugging Face Settings so the running app picks up the new environment.
+
+Important: if any API key or token was shared in chat, screenshots, commits, or logs, rotate it before deploying.
+
 ## 4. Triggering deploys
 
 - Push to the GitHub `deploy` branch with changes to `app.py`, `requirements.txt`, `src/`, `deploy/hf-space/`, or the workflow file.
