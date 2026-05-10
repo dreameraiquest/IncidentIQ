@@ -1,0 +1,31 @@
+KNOWN ERROR TO FIX MAPPINGS
+
+Category: Database
+Error: HikariPool-1 - Connection is not available, request timed out after 30000ms
+Root cause: Connection pool exhausted or idle-in-transaction leak
+Fix: Check pg_stat_activity, open circuit breaker if needed, terminate approved idle sessions
+
+Category: Database
+Error: FATAL remaining connection slots are reserved for non-replication superuser connections
+Root cause: postgres-primary hit max_connections
+Fix: Do not restart primary. Reduce application connections and clear idle sessions with approval
+
+Category: Authentication
+Error: JWT validation failed issuer mismatch expected=https://issuer.prod actual=https://issuer.stage
+Root cause: Staging issuer config applied to production
+Fix: Restore production issuer and restart auth-service after validation
+
+Category: Queue backlog
+Error: consumer lag group=md-consumer topic=prices partition=7 lag rising
+Root cause: Consumer cannot keep up or poison message is blocking a partition
+Fix: Inspect DLQ first. Scale only when no poison message is active
+
+Category: Disk/storage
+Error: No space left on device while writing app log
+Root cause: Host log storage full or logrotate failed
+Fix: Preserve and truncate safe logs, restore logrotate, reduce log level
+
+Category: API timeout
+Error: upstream timed out while reading response header from upstream
+Root cause: Gateway symptom of slow upstream service
+Fix: Investigate upstream dependency before increasing gateway timeout

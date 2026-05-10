@@ -1,0 +1,47 @@
+SOP: Network Connectivity and External Dependency Triage
+Category: Network | Severity: P2 | Owner: Platform Team
+
+Symptoms:
+- DNS failure
+- TLS handshake failure
+- Connection reset or connection refused
+- Network unreachable
+- Third-party provider 5xx or 429 with Retry-After
+
+Diagnostics:
+- Compare failures across zones and services
+- Check DNS resolution and TLS certificate status
+- Inspect retry headers and provider status page
+- Verify whether retry policy is amplifying provider degradation
+
+Remediation:
+- Enable graceful degradation or stale-data fallback
+- Back off retries during provider rate limiting
+- Escalate to vendor with request ids and timestamps
+- Route around a failing network path if available
+
+Validation:
+- Provider error rate falls
+- Retry queue drains
+- DNS and TLS checks succeed from affected pods
+
+Safety:
+- Avoid retry storms that amplify provider outages
+- Do not make broad network policy changes without owner review
+
+SOP: Unknown Incident - Insufficient Evidence Triage
+Category: Unknown | Severity: P3 | Owner: SRE Team
+
+Diagnostics:
+- Collect missing traces and service metrics
+- Ask service owner for recent changes
+- Increase safe logging around the failing path
+
+Remediation:
+- Preserve evidence
+- Open owner investigation ticket
+- Avoid disruptive remediation until evidence improves
+
+Validation:
+- Additional telemetry is collected
+- Hypothesis is updated with evidence

@@ -1,0 +1,31 @@
+SOP: Database Connection Pool Exhaustion
+Category: Database | Severity: P1 | Owner: SRE Team
+
+Symptoms:
+- HikariPool connection is not available
+- FATAL remaining connection slots are reserved
+- SQLTransientConnectionException while acquiring JDBC connection
+- Payment API 5xx or gateway timeout as downstream symptom
+
+Diagnostics:
+- Check pg_stat_activity for active, idle, and idle-in-transaction sessions
+- Inspect connection pool acquisition latency by service and pod
+- Compare request rate and recent deployments against onset time
+- Review lock waits and long-running transactions before changing capacity
+
+Remediation:
+- Shed non-critical traffic or open a circuit breaker before touching database capacity
+- Terminate idle-in-transaction sessions only after owner approval
+- Roll back a recent release if it opened too many database connections
+- Tune pool size only after validating database max_connections and replica capacity
+
+Validation:
+- Pool acquisition latency returns to baseline
+- Postgres connection count drops below safe threshold
+- Payment and order API 5xx rates decline
+- Gateway 504s stop once the upstream service recovers
+
+Safety:
+- Do not restart the database primary blindly
+- Do not increase application pool sizes without database capacity review
+- Preserve query and session evidence before terminating sessions

@@ -257,6 +257,36 @@ Confidence: 0.86
 
 ---
 
+## Run The Final App
+
+The production-runnable entry point is now `app.py`, backed by the reusable `src` pipeline.
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -B app.py
+```
+
+Then open the local Gradio URL shown in the terminal, usually:
+
+```text
+http://127.0.0.1:7860
+```
+
+Run the smoke test with the bundled sample ZIP:
+
+```bash
+python3 -B scripts/smoke_test.py
+```
+
+The app is safe by default:
+
+- RAG uses local runbooks under `src/rag/knowledge_base`.
+- Slack/JIRA payloads are preview-only.
+- Hidden `ground_truth_eval_only` files are skipped during runtime and used only after inference for scoring.
+- Optional FAISS ingestion is available through `from src.rag import ingest`, but the default retrieval path works without paid APIs.
+
+---
+
 ## 🏁 Vision
 
 Upload raw production logs.  

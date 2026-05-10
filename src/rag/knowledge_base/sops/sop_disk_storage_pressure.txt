@@ -1,0 +1,31 @@
+SOP: Disk / Storage Pressure
+Category: Disk/storage | Severity: P1 | Owner: Infra Team
+
+Symptoms:
+- No space left on device
+- Disk pressure on node
+- Logrotate failed because filesystem is full
+- Ephemeral storage available near zero
+- IO wait or persistent volume latency
+
+Diagnostics:
+- Check filesystem and inode usage
+- Find largest log directories and container logs
+- Inspect node events for eviction warnings
+- Confirm whether log level or logrotate changed recently
+
+Remediation:
+- Truncate safe log files instead of deleting application data
+- Restore log level to INFO if DEBUG was left enabled
+- Force logrotate after freeing space
+- Expand volume only with owner approval
+
+Validation:
+- Disk usage drops below threshold
+- Kubelet disk pressure clears
+- Pod evictions stop
+- Logrotate completes successfully
+
+Safety:
+- Do not delete application data without owner approval
+- Preserve relevant incident logs before truncating files

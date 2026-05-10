@@ -1,0 +1,18 @@
+ENVIRONMENT: Production Architecture Overview
+Category: Environment | Owner: Platform Team
+
+Services:
+- nginx-gateway handles ingress, TLS termination, and external traffic
+- payment-api calls postgres-primary and redis-cache
+- order-api calls payment-api, postgres-primary, and kafka-broker
+- auth-service validates JWTs and serves JWK configuration
+- market-data-consumer consumes Kafka topic prices and writes redis-cache
+- kafka-broker hosts topics prices, retry.prices, dlq.prices, orders, and risk.signals
+- postgres-primary is PostgreSQL with max_connections 200
+
+Operational Notes:
+- Payment API database pool exhaustion often surfaces as gateway 504s
+- Auth issuer must be https://issuer.prod in production
+- Kafka poison messages should be quarantined before replay
+- Node ephemeral storage pressure usually starts with log growth or logrotate failure
+- Rollbacks require release-manager approval

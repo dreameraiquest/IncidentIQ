@@ -1,0 +1,31 @@
+SOP: Authentication Token Validation Failure
+Category: Authentication | Severity: P2 | Owner: Identity Platform Team
+
+Symptoms:
+- JWT validation failed
+- Issuer mismatch between production and staging issuer URLs
+- Invalid token signature or stale JWK key id
+- Audience claim mismatch
+- 401 or 403 spike in auth-service or order-api
+
+Diagnostics:
+- Verify issuer, audience, and client id configuration
+- Check JWK cache age and recent key rotation events
+- Compare failed token kid values across services
+- Inspect auth-service configmap and recent deployment history
+
+Remediation:
+- Restore known-good auth configmap values
+- Refresh JWK cache on auth-service pods
+- Restart auth-service only after config validation
+- Coordinate key rollback with identity provider owner if needed
+
+Validation:
+- 401 and 403 rate returns to baseline
+- Known-good user token validates successfully
+- New and old key ids behave as expected during rotation window
+
+Safety:
+- Do not disable token validation
+- Do not broaden RBAC permissions as a workaround
+- Require human approval before changing production identity configuration
