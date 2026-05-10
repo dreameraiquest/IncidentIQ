@@ -38,16 +38,6 @@ IncidentIQ demonstrates:
 
 ---
 
-# 🎥 Demo Preview
-
-> Upload production logs → AI agents collaborate → RCA generated → Slack/JIRA actions proposed.
-
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" width="900" alt="IncidentIQ Dashboard">
-</p>
-
----
-
 # 🧠 What Makes IncidentIQ Different?
 
 Unlike toy AI demos or simple keyword classifiers, IncidentIQ:
