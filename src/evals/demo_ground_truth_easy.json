@@ -1,0 +1,230 @@
+[
+  {
+    "id": "DB_POOL",
+    "category": "Database",
+    "severity": "P1",
+    "root_cause": "Postgres connection exhaustion and HikariCP pool starvation are preventing payment-api from acquiring JDBC connections.",
+    "affected_services": ["payment-api", "postgres-primary"],
+    "expected_evidence_terms": [
+      "HikariPool-1 Connection is not available",
+      "FATAL remaining connection slots are reserved",
+      "SQLTransientConnectionException timeout acquiring JDBC connection"
+    ],
+    "expected_remediations": [
+      "Inspect active Postgres connections, blocking queries, and connection slot usage",
+      "Kill or tune long-running/blocking queries if confirmed safe",
+      "Temporarily increase HikariCP pool or Postgres connection capacity only after verifying database headroom",
+      "Add alerts for pool wait time, active connections, and connection acquisition timeout",
+      "Require human approval before restarting database or changing persistent DB capacity"
+    ]
+  },
+  {
+    "id": "AUTH_JWT",
+    "category": "Authentication",
+    "severity": "P2",
+    "root_cause": "JWT validation is failing because issuer, audience, signature, or key-id configuration does not match production auth expectations.",
+    "affected_services": ["auth-service", "order-api"],
+    "expected_evidence_terms": [
+      "JWT validation failed issuer mismatch",
+      "invalid token signature kid=prod-key-17",
+      "audience claim does not match"
+    ],
+    "expected_remediations": [
+      "Verify issuer and audience configuration in auth-service and calling services",
+      "Check JWK/key rotation state and confirm kid=prod-key-17 is available and trusted",
+      "Compare recent auth configuration changes against the last known-good version",
+      "Rollback incorrect auth configuration or key material if mismatch is confirmed",
+      "Validate with known-good tokens before closing the incident"
+    ]
+  },
+  {
+    "id": "API_504",
+    "category": "API timeout",
+    "severity": "P2",
+    "root_cause": "nginx-gateway is timing out while waiting for the risk-engine upstream during /api/risk/check requests.",
+    "affected_services": ["nginx-gateway", "risk-engine"],
+    "expected_evidence_terms": [
+      "upstream timed out while reading",
+      "HTTP 504 generated for /api/risk/check",
+      "gateway timeout after 60000 ms"
+    ],
+    "expected_remediations": [
+      "Check risk-engine latency, saturation, and error rate during the timeout window",
+      "Inspect nginx upstream timeout settings and retry behavior",
+      "Scale or isolate risk-engine if saturation is confirmed",
+      "Add circuit breaker or graceful degradation for slow risk checks",
+      "Validate that 504 rate and p95/p99 latency return to baseline"
+    ]
+  },
+  {
+    "id": "MEM_OOM",
+    "category": "Memory/CPU",
+    "severity": "P1",
+    "root_cause": "market-data-consumer is experiencing memory exhaustion/OOMKilled restarts, likely due to heap pressure or resource limit breach.",
+    "affected_services": ["market-data-consumer", "kubelet"],
+    "expected_evidence_terms": [
+      "Container market-data-consumer was OOMKilled",
+      "heap usage reached 97 percent",
+      "Back-off restarting failed container"
+    ],
+    "expected_remediations": [
+      "Inspect pod memory limits, heap usage, GC behavior, and restart history",
+      "Check recent workload or deployment changes affecting market-data-consumer",
+      "Temporarily increase memory only if node capacity and leak risk are understood",
+      "Capture heap/profile data if a memory leak is suspected",
+      "Validate restart loop stops and consumer processing returns to baseline"
+    ]
+  },
+  {
+    "id": "QUEUE_LAG",
+    "category": "Queue backlog",
+    "severity": "P2",
+    "root_cause": "market-data-consumer is processing Kafka messages slower than ingress, causing consumer lag on market_ticks.",
+    "affected_services": ["market-data-consumer", "kafka-broker"],
+    "expected_evidence_terms": [
+      "consumer lag above threshold topic=market_ticks",
+      "records-lag-max increased beyond alert threshold",
+      "consumer processing slower than ingress"
+    ],
+    "expected_remediations": [
+      "Check consumer lag by partition and consumer group stability",
+      "Inspect consumer processing latency, CPU/memory saturation, and downstream dependency slowness",
+      "Scale consumers if processing is bottlenecked and partitioning allows it",
+      "Pause or throttle producers only if backlog threatens stability",
+      "Validate lag decreases and records-lag-max returns below alert threshold"
+    ]
+  },
+  {
+    "id": "DISK_FULL",
+    "category": "Disk/storage",
+    "severity": "P1",
+    "root_cause": "order-api/node storage is full or under disk pressure, causing failed writes and checkpoint failures.",
+    "affected_services": ["order-api", "kubelet", "node-agent"],
+    "expected_evidence_terms": [
+      "write /var/log/app/current.log no space left",
+      "NodeHasDiskPressure kubelet condition true",
+      "failed to write checkpoint file"
+    ],
+    "expected_remediations": [
+      "Check node disk usage, inode usage, log volume growth, and affected mounts",
+      "Safely rotate or delete noncritical logs after confirming retention requirements",
+      "Expand disk or move workload if storage pressure persists",
+      "Restart affected workloads only after disk pressure is resolved",
+      "Add disk usage and inode alerts for affected nodes"
+    ]
+  },
+  {
+    "id": "DEPLOY_ERROR",
+    "category": "Deployment regression",
+    "severity": "P1",
+    "root_cause": "payment-api version 2.8.1 rollout introduced a new error signature and increased 5xx rate after deployment.",
+    "affected_services": ["payment-api"],
+    "expected_evidence_terms": [
+      "rollout started deployment/payment-api image=payment-api:2.8.1",
+      "new error signature observed only",
+      "5xx rate increased after rollout"
+    ],
+    "expected_remediations": [
+      "Compare payment-api 2.8.1 against the previous stable deployment",
+      "Rollback payment-api to the last known-good version if regression is confirmed",
+      "Check config, feature flags, dependency versions, and deployment diff",
+      "Run smoke tests and monitor 5xx rate after rollback",
+      "Open a follow-up defect for the failing release"
+    ]
+  },
+  {
+    "id": "EXT_PAY",
+    "category": "External dependency",
+    "severity": "P2",
+    "root_cause": "payment-api authorization calls are failing because the external payment provider StripeMock is degraded or returning HTTP 503.",
+    "affected_services": ["payment-api"],
+    "expected_evidence_terms": [
+      "payment provider returned HTTP 503",
+      "external authorize call failed provider=StripeMock",
+      "vendor status degraded for payments"
+    ],
+    "expected_remediations": [
+      "Check StripeMock/provider status and error response trend",
+      "Enable fallback, queuing, or degraded payment behavior if supported",
+      "Use retry with exponential backoff and circuit breaking",
+      "Notify stakeholders about external provider impact",
+      "Validate authorization success rate after provider recovery"
+    ]
+  },
+  {
+    "id": "UNK_STATE",
+    "category": "Unknown",
+    "severity": "P3",
+    "root_cause": "order-api shows an unexpected state transition with insufficient evidence to confidently classify the root cause.",
+    "affected_services": ["order-api"],
+    "expected_evidence_terms": [
+      "unexpected state transition from AUTHORIZED",
+      "missing transition rule for current",
+      "trace ended before downstream acknowledgement"
+    ],
+    "expected_remediations": [
+      "Collect additional traces and application context around the state transition",
+      "Check state machine rules and recent code/config changes",
+      "Correlate downstream acknowledgement timing",
+      "Do not auto-create high-priority ticket unless impact increases",
+      "Escalate for manual triage if the pattern repeats"
+    ]
+  },
+  {
+    "id": "NET_RESET",
+    "category": "Network",
+    "severity": "P2",
+    "root_cause": "nginx-gateway/order-api traffic is experiencing upstream connection resets or premature upstream disconnects.",
+    "affected_services": ["nginx-gateway", "order-api"],
+    "expected_evidence_terms": [
+      "upstream prematurely closed connection while",
+      "recv() failed (104: Connection reset",
+      "upstream connect error or disconnect/reset"
+    ],
+    "expected_remediations": [
+      "Check upstream pod health, restarts, and connection reset rate",
+      "Inspect gateway, service mesh, mTLS, and network policy changes",
+      "Verify connectivity between nginx-gateway and order-api",
+      "Check whether resets correlate with deploys, CPU pressure, or keepalive settings",
+      "Validate reset rate and 5xx rate return to baseline"
+    ]
+  },
+  {
+    "id": "QUEUE_POISON",
+    "category": "Queue backlog",
+    "severity": "P2",
+    "root_cause": "notification-worker is repeatedly retrying a poison Kafka message with an unknown schema version, causing failed processing and backlog risk.",
+    "affected_services": ["notification-worker", "kafka-broker"],
+    "expected_evidence_terms": [
+      "message failed processing sending to",
+      "same message retried 25 times",
+      "poison payload suspected schemaVersion=unknown"
+    ],
+    "expected_remediations": [
+      "Identify the poison message and move it to DLQ/quarantine if safe",
+      "Check schema compatibility and producer changes for schemaVersion=unknown",
+      "Pause or isolate the failing message to unblock the consumer",
+      "Add validation to reject unsupported schema versions earlier",
+      "Validate retry count falls and consumer lag recovers"
+    ]
+  },
+  {
+    "id": "UNK_CORR",
+    "category": "Unknown",
+    "severity": "P3",
+    "root_cause": "notification-worker has missing correlation/trace context, so the incident should remain low-confidence until more evidence is collected.",
+    "affected_services": ["notification-worker"],
+    "expected_evidence_terms": [
+      "missing correlation id cannot link",
+      "trace context header absent",
+      "span dropped due to invalid"
+    ],
+    "expected_remediations": [
+      "Improve trace propagation and correlation-id validation",
+      "Inspect instrumentation and header propagation between services",
+      "Collect additional traces before assigning a definitive root cause",
+      "Treat as low-priority unless user impact or error rate increases",
+      "Escalate only if repeated missing-context events block debugging"
+    ]
+  }
+]
