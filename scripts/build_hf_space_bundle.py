@@ -25,7 +25,7 @@ def build_bundle(output_dir: Path) -> Path:
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    copy_file(REPO_ROOT / "app.py", output_dir / "app.py")
+    copy_file(REPO_ROOT / "deploy" / "hf-space" / "app.py", output_dir / "app.py")
     copy_file(REPO_ROOT / "deploy" / "hf-space" / "README.md", output_dir / "README.md")
     copy_file(REPO_ROOT / "deploy" / "hf-space" / "requirements.txt", output_dir / "requirements.txt")
 
