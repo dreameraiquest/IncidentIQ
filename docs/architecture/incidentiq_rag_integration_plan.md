@@ -10,7 +10,7 @@ The right implementation path is to first make `src/rag` reliably feed structure
 
 Notebook:
 
-- Main file: `v7-final/notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_v7.ipynb`
+- Main file: `docs/notebooks/v7-final/notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_v7.ipynb`
 - Defines Pydantic contracts for log events, signals, evidence clusters, incidents, actions, and responses.
 - Safely accepts `.zip`, `.jsonl`, `.log`, `.txt`, and `.json` inputs.
 - Skips `ground_truth_eval_only` during runtime analysis.
@@ -50,7 +50,7 @@ If the RAG module returns a non-empty result, the notebook uses FAISS context. I
 
 ## Critical Gaps
 
-1. The RAG knowledge-base path is wrong. The code points to repo-root `knowledge_base`, but the actual knowledge base is `src/rag/knowledge_base`.
+1. The RAG knowledge base now lives under `src/rag/knowledge_base`; runtime configuration should continue to resolve that path by default.
 2. FAISS retrieval is incorrectly gated by `OPENROUTER_API_KEY`. Local vector retrieval should work without an LLM key. Only optional synthesized answers need the key.
 3. The current runtime environment does not have all RAG dependencies installed.
 4. RAG chunks do not fully match the remediation agent contract. The agent expects `diagnostics`, `remediation`, `validation`, and `safety_notes`, but FAISS chunks currently return those fields as empty lists.
@@ -60,22 +60,21 @@ If the RAG module returns a non-empty result, the notebook uses FAISS context. I
 
 ### Step 1: Fix RAG Configuration
 
-Update `src/rag/rag_retriever.py` so the default knowledge base path is:
+Update `src/rag/rag_retriever.py` so the default RAG work directory is:
 
 ```python
-Path(__file__).resolve().parent / "knowledge_base"
+Path(__file__).resolve().parent
 ```
 
 Recommended configurable version:
 
 ```python
-KNOWLEDGE_BASE = Path(os.getenv(
-    "INCIDENTIQ_KB_DIR",
-    str(Path(__file__).resolve().parent / "knowledge_base")
-))
+RAG_WORK_DIR = Path(os.getenv("workDir", str(Path(__file__).resolve().parent)))
+KNOWLEDGE_BASE = RAG_WORK_DIR / "knowledge_base"
+FAISS_INDEX_PATH = RAG_WORK_DIR / "faiss_index"
 ```
 
-Keep FAISS output under `src/rag/faiss_index` or make it configurable with `INCIDENTIQ_FAISS_INDEX_PATH`.
+Keep FAISS output under `src/rag/faiss_index` by deriving it from the same `workDir` value.
 
 ### Step 2: Install Dependencies
 
@@ -138,7 +137,7 @@ Preferred implementation:
 
 ### Step 6: Ensure Notebook Imports `src`
 
-When the notebook runs from Colab or from `v7-final/notebooks`, ensure the repo root is on `sys.path`:
+When the notebook runs from Colab or from `docs/notebooks/v7-final/notebooks`, ensure the repo root is on `sys.path`:
 
 ```python
 import sys
@@ -234,4 +233,3 @@ The integration is complete when:
 - Outputs cite both log evidence and RAG source files.
 - Hidden ground truth remains eval-only.
 - The same behavior is available through a modular `src/` pipeline.
-

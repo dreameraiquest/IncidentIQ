@@ -12,8 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 from dateutil import parser as dtparser
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+
+load_dotenv()
 
 WORK_ROOT = Path(
     os.getenv(
@@ -124,9 +127,9 @@ class IncidentResult(BaseModel):
 
 
 class TicketPayload(BaseModel):
-    system: str = "jira-preview"
+    system: str = Field(default_factory=lambda: os.getenv("JIRA_SYSTEM", "jira-preview"))
     create_issue: bool = True
-    project_key: str = "OPS"
+    project_key: str = Field(default_factory=lambda: os.getenv("JIRA_PROJECT_KEY", "OPS"))
     title: str
     priority: str
     labels: List[str]
@@ -136,7 +139,7 @@ class TicketPayload(BaseModel):
 
 
 class SlackPayload(BaseModel):
-    channel: str = "#devops-incidents"
+    channel: str = Field(default_factory=lambda: os.getenv("SLACK_CHANNEL", "#devops-incidents"))
     send_message: bool = True
     title: str
     body: str

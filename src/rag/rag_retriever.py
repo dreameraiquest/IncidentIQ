@@ -4,11 +4,16 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 RAG_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = RAG_ROOT.parents[1]
-KNOWLEDGE_BASE = Path(os.getenv("INCIDENTIQ_KB_DIR", str(RAG_ROOT / "knowledge_base")))
-FAISS_INDEX_PATH = Path(os.getenv("INCIDENTIQ_FAISS_INDEX_PATH", str(RAG_ROOT / "faiss_index")))
+RAG_WORK_DIR = Path(os.getenv("workDir", str(RAG_ROOT)))
+KNOWLEDGE_BASE = RAG_WORK_DIR / "knowledge_base"
+FAISS_INDEX_PATH = RAG_WORK_DIR / "faiss_index"
 
 TOP_K = int(os.getenv("INCIDENTIQ_RAG_TOP_K", "5"))
 

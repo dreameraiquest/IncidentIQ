@@ -3,16 +3,22 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 import gradio as gr
+from dotenv import load_dotenv
 
+load_dotenv()
 from src import analyze_uploaded_logs, response_to_markdown
 
 
-APP_TITLE = "IncidentIQ"
-APP_DESCRIPTION = (
+APP_TITLE = os.getenv("APP_TITLE", "IncidentIQ")
+APP_DESCRIPTION = os.getenv(
+    "APP_DESCRIPTION",
     "Upload raw DevOps logs or a ZIP. IncidentIQ parses the evidence, detects "
     "incident candidates, retrieves local runbooks, and generates preview-only "
-    "tickets, notifications, cookbooks, and reports."
+    "tickets, notifications, cookbooks, and reports.",
 )
+JIRA_BASE_URL = os.getenv("JIRA_BASE_URL", "https://jira.example.com")
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "OPS")
+GRADIO_ANALYTICS_ENABLED = os.getenv("GRADIO_ANALYTICS_ENABLED", "false").lower() == "true"
 
 
 def _progress_markdown(active_step: int, extra: str = "") -> str:
@@ -62,8 +68,8 @@ def _jira_links_markdown(response) -> str:
         return "## Jira Links\nNo incident candidates were found, so no Jira previews were generated."
     lines = ["## Jira Links", ""]
     for idx, incident in enumerate(response.incidents, start=1):
-        issue_key = f"OPS-{1000 + idx}"
-        url = f"https://jira.example.com/browse/{issue_key}?incident_id={incident.incident_id}"
+        issue_key = f"{JIRA_PROJECT_KEY}-{1000 + idx}"
+        url = f"{JIRA_BASE_URL.rstrip('/')}/browse/{issue_key}?incident_id={incident.incident_id}"
         lines.append(f"- [{issue_key}: {incident.severity} {incident.category}]({url}) - dummy preview link")
     return "\n".join(lines)
 
@@ -150,7 +156,7 @@ def analyze_for_ui(
 
 def build_demo() -> gr.Blocks:
     theme = gr.themes.Soft(primary_hue="blue", neutral_hue="slate")
-    with gr.Blocks(title=APP_TITLE, theme=theme, analytics_enabled=False) as demo:
+    with gr.Blocks(title=APP_TITLE, theme=theme, analytics_enabled=GRADIO_ANALYTICS_ENABLED) as demo:
         gr.Markdown(f"# {APP_TITLE}\n{APP_DESCRIPTION}")
         files = gr.File(label="Upload report/log file", file_count="multiple", file_types=[".zip", ".jsonl", ".log", ".txt", ".json"])
         enable_rag = gr.Checkbox(value=True, label="Use local RAG runbooks")

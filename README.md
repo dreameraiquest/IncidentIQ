@@ -129,7 +129,7 @@ IncidentIQ/
 │
 ├── datasets/      # Synthetic mixed production-style incident datasets
 ├── docs/          # Architecture diagrams, screenshots, design notes, demo assets
-├── notebooks/     # Experimental Colab/Jupyter prototypes and workflow validation
+│   └── notebooks/ # Experimental Colab/Jupyter prototypes and workflow validation
 ├── src/           # Main production-oriented source code
 │
 ├── .gitignore
@@ -169,7 +169,7 @@ Contains:
 
 ---
 
-### `notebooks/`
+### `docs/notebooks/`
 
 Contains:
 - experimental Colab notebooks
@@ -208,7 +208,7 @@ Includes:
 For detailed source architecture and planned implementation files, see:
 
 ```text
-src/README.md
+src/src_README.md
 ```
 ---
 
@@ -269,7 +269,7 @@ python3 -B app.py
 Then open the local Gradio URL shown in the terminal, usually:
 
 ```text
-http://127.0.0.1:7860
+http://127.0.0.1:8765
 ```
 
 Run the smoke test with the bundled sample ZIP:

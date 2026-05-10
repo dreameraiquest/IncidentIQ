@@ -1,0 +1,8 @@
+langgraph
+langchain
+openai
+pandas
+pydantic
+faiss-cpu
+streamlit
+jupyter

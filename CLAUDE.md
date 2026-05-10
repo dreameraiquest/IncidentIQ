@@ -28,9 +28,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 IncidentIQ/
 ├── src/              # Production-oriented modular implementation
-├── notebooks/        # Colab/Jupyter experimentation and prototypes
 ├── datasets/         # Raw and eval-only test data
 ├── docs/             # Architecture diagrams and design notes
+│   └── notebooks/    # Colab/Jupyter experimentation and prototypes
 ├── requirements.txt  # Python dependencies
 ├── README.md         # Full project documentation
 └── CLAUDE.md         # This file
@@ -45,7 +45,7 @@ IncidentIQ/
 pip install -r requirements.txt
 
 # Run a specific notebook (experimental/prototype work)
-jupyter notebook notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb
+jupyter notebook docs/notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb
 
 # If implementing src/ modules, test individual components with Python
 python -c "from src.models.enums import IncidentCategory; print(IncidentCategory.DATABASE)"
@@ -351,7 +351,7 @@ IncidentIQ supports detection of:
 
 - [README.md](README.md) — Full project vision and feature list
 - [src/src_README.md](src/src_README.md) — Detailed src/ architecture guide
-- [notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb](notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb) — Latest prototype and workflow validation
+- [docs/notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb](docs/notebooks/Multi_Agent_DevOps_Incident_Analysis_Suite_SRC_Aligned_Colab_v4.ipynb) — Latest prototype and workflow validation
 - [Hackthon Project Description.txt](Hackthon%20Project%20Description.txt) — Use case summary
 
 ## Future Enhancements

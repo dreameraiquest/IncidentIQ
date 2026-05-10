@@ -5,7 +5,7 @@
 This report defines the agent architecture that IncidentIQ should build for the hackathon based on:
 
 - the final uploaded architecture using Gradio + FastAPI + LangGraph + n8n + RAG
-- the existing notebook prototypes in `notebooks/`
+- the existing notebook prototypes in `docs/notebooks/`
 - the planned production structure in `src/`
 
 The goal is not to build the maximum number of agents. The goal is to build the minimum set of agents that produces a convincing multi-agent demo, clear reasoning boundaries, reliable fallback behavior, and a clean implementation story for judges.
