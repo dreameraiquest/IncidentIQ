@@ -9,7 +9,7 @@ python_version: "3.11"
 suggested_hardware: cpu-basic
 fullWidth: true
 header: default
-short_description: Multi-agent DevOps incident analysis with evidence-backed RCA and safe remediation previews.
+short_description: DevOps incident analysis with RCA and safe previews.
 ---
 
 # IncidentIQ
