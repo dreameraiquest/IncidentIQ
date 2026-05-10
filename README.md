@@ -292,40 +292,6 @@ sequenceDiagram
     JIRA-->>Platform Team: Incident Created
 ```
 
----
-
-<p align="center">
-  <img src="docs/diagrams/n8n Workflow.png" width="900" alt="n8n Integration Workflow">
-</p>
-
----
-
-# 🖼️ Screenshots
-
-## Incident Analysis Dashboard
-
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard">
-</p>
-
----
-
-## RCA & Timeline Reconstruction
-
-<p align="center">
-  <img src="docs/screenshots/rca_output.png" width="900" alt="RCA Output">
-</p>
-
----
-
-## Slack Notification Preview
-
-<p align="center">
-  <img src="docs/screenshots/slack_notification.png" width="900" alt="Slack Notification">
-</p>
-
----
-
 # 🛠️ Tech Stack
 
 ## AI / Agentic Stack
