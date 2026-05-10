@@ -1,0 +1,158 @@
+KNOWN ERROR → FIX MAPPINGS
+===========================
+Stack: alpha-capital prod | GKE us-east-1
+Format: ERROR MESSAGE → ROOT CAUSE → FIX → SOP REFERENCE
+
+DATABASE
+--------
+
+ERROR: HikariPool-1 - Connection is not available, request timed out after 30000ms
+SERVICE: payment-api | logger: db.pool
+ROOT CAUSE: Connection pool exhausted. Usually idle_in_transaction leak or traffic spike.
+FIX: Check pg_stat_activity for idle_in_transaction. Terminate if duration > 5 min. Open circuit breaker first.
+SOP: sop_database_connection_pool.txt | INCIDENT: INC-001, INC-005
+
+ERROR: FATAL: remaining connection slots are reserved for non-replication superuser connections
+SERVICE: postgres-primary | logger: postgres
+ROOT CAUSE: postgres-primary hit max_connections=200. All slots consumed.
+FIX: Kill idle_in_transaction connections immediately. Do NOT restart postgres-primary.
+SOP: sop_database_connection_pool.txt | INCIDENT: INC-001
+
+ERROR: SQLTransientConnectionException: timeout acquiring JDBC connection for checkout transaction
+SERVICE: payment-api | logger: db.pool
+ROOT CAUSE: Downstream symptom of pool exhaustion. Connection not available within acquisition timeout.
+FIX: Fix pool exhaustion first (see HikariPool error above). This error self-resolves after pool recovers.
+SOP: sop_database_connection_pool.txt
+
+AUTHENTICATION
+--------------
+
+ERROR: JWT validation failed: issuer mismatch expected=https://issuer.prod actual=https://issuer.stage
+SERVICE: auth-service | logger: security.auth
+ROOT CAUSE: Wrong ISSUER_URL in auth-service configmap. Staging config applied to prod.
+FIX: kubectl patch configmap auth-config -n prod with correct ISSUER_URL=https://issuer.prod. Restart auth-service.
+SOP: sop_authentication_jwt_failure.txt | INCIDENT: INC-002
+
+ERROR: invalid token signature kid=prod-key-17 request rejected
+SERVICE: order-api | logger: security.auth
+ROOT CAUSE: JWK cache stale after key rotation. Auth-service using old key to validate tokens signed with new key.
+FIX: POST to /actuator/jwk-refresh on auth-service pods. If that fails, restart auth-service with updated JWK TTL.
+SOP: sop_authentication_jwt_failure.txt
+
+ERROR: audience claim does not match configured client for order-api
+SERVICE: auth-service | logger: security.auth
+ROOT CAUSE: order-api client_id changed in identity provider but not reflected in auth-service configmap.
+FIX: Update order-api-auth configmap audience field. Restart auth-service.
+SOP: sop_authentication_jwt_failure.txt
+
+QUEUE / KAFKA
+-------------
+
+ERROR: consumer lag group=md-consumer topic=prices partition=7 lag=184230 queue backlog rising
+SERVICE: market-data-consumer | logger: kafka.consumer
+ROOT CAUSE: Consumer processing rate below produce rate. May be poison message or capacity issue.
+FIX: Check DLQ for poison message first. If no poison message, scale consumers. If poison message, skip offset.
+SOP: sop_kafka_queue_backlog.txt | INCIDENT: INC-003, INC-007
+
+ERROR: retry topic retry.prices depth=92000 and DLQ growth detected for poison message key=PX-8891
+SERVICE: kafka-broker | logger: kafka.broker
+ROOT CAUSE: Malformed message causing consumer crash and retry storm into DLQ.
+FIX: Scale consumers to 0. Identify poison message key. Skip offset (data-platform approval). Scale back.
+SOP: sop_kafka_queue_backlog.txt | INCIDENT: INC-003
+
+ERROR: rebalance loop detected; consumer paused after processing poison message
+SERVICE: market-data-consumer | logger: kafka.consumer
+ROOT CAUSE: Poison message causing every consumer pod that picks it up to crash, triggering continuous rebalance.
+FIX: Scale to 0 immediately to stop rebalance amplification. Then skip the offset.
+SOP: sop_kafka_queue_backlog.txt | INCIDENT: INC-003
+
+DISK / STORAGE
+--------------
+
+ERROR: No space left on device while writing /var/log/order-api/app.log
+SERVICE: order-api | logger: fs.storage
+ROOT CAUSE: Disk full on host node. Usually log file growth (DEBUG level left on) or logrotate failure.
+FIX: Truncate large log files (do not delete). Set LOG_LEVEL=INFO. Run logrotate manually.
+SOP: sop_disk_storage_pressure.txt | INCIDENT: INC-004
+
+ERROR: disk pressure on node ip-10-0-1-12 ephemeral-storage available=1%
+SERVICE: node-agent | logger: kubelet
+ROOT CAUSE: Node ephemeral storage nearly full. Kubernetes will start evicting pods if reaches 0%.
+FIX: Immediately truncate largest log files on the node. Fix logrotate. Reduce LOG_LEVEL.
+SOP: sop_disk_storage_pressure.txt | INCIDENT: INC-004
+
+ERROR: logrotate failed for /var/log/containers/order-api.log because filesystem is full
+SERVICE: node-agent | logger: logrotate
+ROOT CAUSE: logrotate attempted rotation but filesystem was already full. logrotate cannot create new file.
+FIX: Free space first (truncate logs), then force logrotate: logrotate -f /etc/logrotate.d/order-api
+SOP: sop_disk_storage_pressure.txt | INCIDENT: INC-004
+
+DEPLOYMENT / CANARY
+-------------------
+
+ERROR: canary failed error_budget_burn=high rollback recommended for payment-api version=2.9.0
+SERVICE: deploy-controller | logger: deploy
+ROOT CAUSE: New version introduced errors that consumed error budget faster than threshold allows.
+FIX: Pause rollout immediately. Gather evidence from canary pods. Execute rollback with release-manager approval.
+SOP: sop_deployment_regression.txt | INCIDENT: INC-005
+
+ERROR: rollout started service=payment-api version=X.Y.Z canary=10% [followed immediately by errors]
+SERVICE: deploy-controller | logger: deploy
+ROOT CAUSE: New version has a defect visible under real traffic. Canary correlation is strong indicator.
+FIX: kubectl rollout pause, then kubectl rollout undo. Investigate new version before re-releasing.
+SOP: sop_deployment_regression.txt | INCIDENT: INC-005
+
+API TIMEOUT
+-----------
+
+ERROR: upstream timed out while reading response header from upstream request=/api/payments/authorize
+SERVICE: nginx-gateway | logger: nginx
+ROOT CAUSE: payment-api not responding within nginx proxy_read_timeout. Usually caused by DB pool exhaustion upstream.
+FIX: Check if DB pool is exhausted first (most common cause). If yes, fix DB. If no, check payment-api GC or OOM.
+SOP: sop_api_timeout_cascade.txt | INCIDENT: INC-005
+
+ERROR: HTTP 504 generated for /api/payments/authorize after upstream timeout
+SERVICE: nginx-gateway | logger: nginx
+ROOT CAUSE: Downstream symptom of payment-api being slow. Root cause is usually DB or memory issue in payment-api.
+FIX: Treat as downstream symptom. Investigate payment-api, not nginx-gateway.
+SOP: sop_api_timeout_cascade.txt | INCIDENT: INC-005
+
+MEMORY / CPU
+------------
+
+ERROR: OOMKilled (exit code 137) on payment-api or risk-engine pod
+SERVICE: payment-api / risk-engine
+ROOT CAUSE: Pod exceeded memory limit. Could be memory leak in new version or traffic spike.
+FIX: Capture heap dump first. Check if correlated with recent deploy. Rollback or scale — not both.
+SOP: sop_memory_cpu_oomkilled.txt | INCIDENT: INC-006
+
+EXTERNAL DEPENDENCY
+-------------------
+
+ERROR: 429 Too Many Requests with Retry-After header from external price feed provider
+SERVICE: market-data-consumer
+ROOT CAUSE: External provider applying rate limiting. Internal retry logic may be causing retry storm.
+FIX: Enable STALE_DATA_FALLBACK=true. Set RETRY_BACKOFF_BASE_MS=5000 to stop amplifying rate limit.
+SOP: sop_network_external_unknown.txt | INCIDENT: INC-008
+
+COMBINED SIGNAL PATTERNS (multi-error incidents)
+-------------------------------------------------
+
+PATTERN: HikariPool timeout + postgres FATAL + nginx 504 in same 5-minute window
+CATEGORY: Database (root) + API timeout (symptom) + Deployment regression (possible cause)
+INTERPRETATION: DB pool exhaustion is the root cause. 504 is downstream symptom. Check deploy-controller
+  logs for a recent rollout that correlates — it may be Pattern B (bad canary opened too many connections).
+FIX: Follow sop_database_connection_pool.txt first. If canary is active, also follow sop_deployment_regression.txt.
+INCIDENT EXAMPLE: INC-005 (all three signals present simultaneously)
+
+PATTERN: JWT issuer mismatch + invalid token signature + audience mismatch in same window
+CATEGORY: Authentication
+INTERPRETATION: Auth configuration was changed wholesale (not just one field). Likely configmap replacement.
+FIX: Restore entire auth-config configmap from last-known-good version. Restart auth-service.
+INCIDENT EXAMPLE: INC-002
+
+PATTERN: Consumer lag rising + DLQ growing + rebalance loop in same window
+CATEGORY: Queue backlog (poison message variant)
+INTERPRETATION: Poison message is highly likely. Scale to 0 before investigating.
+FIX: Scale market-data-consumer to 0. Identify poison message key. Get data-platform approval to skip offset.
+INCIDENT EXAMPLE: INC-003

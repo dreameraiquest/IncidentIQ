@@ -1,0 +1,88 @@
+SOP: Authentication Token Validation Failure
+============================================
+Stack: auth-service / order-api / payment-api | GKE us-east-1 | env=prod | tenant=alpha-capital
+Category: Authentication | Severity: P2 | Owner: Identity Platform Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=security.auth: "JWT validation failed: issuer mismatch expected=https://issuer.prod actual=https://issuer.stage"
+- logger=security.auth: "invalid token signature kid=prod-key-17 request rejected"
+- logger=security.auth: "audience claim does not match configured client for order-api"
+- auth-service or order-api returning status=401 or 403 in spike (>10/min sustained)
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Confirm spike pattern — is it all tenants or just alpha-capital?
+   kubectl logs -l app=auth-service -n prod --since=10m | grep -c "JWT validation failed"
+   kubectl logs -l app=auth-service -n prod --since=10m | grep "tenant" | sort | uniq -c
+
+2. Check issuer configuration currently active in auth-service:
+   kubectl exec -it auth-service-<pod> -n prod -- \
+   curl -s localhost:8080/actuator/env | grep -i issuer
+
+3. Check JWK cache refresh status:
+   kubectl exec -it auth-service-<pod> -n prod -- \
+   curl -s localhost:8080/actuator/metrics/jwk.cache.refresh.last
+
+4. Check if a recent deploy changed auth config:
+   kubectl describe configmap auth-config -n prod | grep -A5 issuer
+
+ROOT CAUSE PATTERNS
+--------------------
+Pattern A — Issuer mismatch after deploy (most common):
+  Signal: "issuer mismatch expected=https://issuer.prod actual=https://issuer.stage"
+  Cause: deploy-controller applied staging configmap to prod auth-service
+  Check: kubectl get configmap auth-config -n prod -o yaml | grep issuer
+
+Pattern B — Key rotation / JWK cache stale:
+  Signal: "invalid token signature kid=prod-key-17 request rejected"
+  Cause: JWK endpoint returned new keys, auth-service cache not refreshed
+  Check: curl https://auth.prod.internal/.well-known/jwks.json | jq '.keys[].kid'
+
+Pattern C — Audience misconfiguration:
+  Signal: "audience claim does not match configured client for order-api"
+  Cause: order-api client_id changed in identity provider but not in auth-service config
+  Check: kubectl get configmap order-api-auth -n prod -o yaml | grep audience
+
+REMEDIATION
+-----------
+Step 1 — No approval needed:
+  Force JWK cache refresh on all auth-service pods:
+    kubectl exec -it auth-service-<pod> -n prod -- \
+    curl -X POST localhost:8080/actuator/jwk-refresh
+
+Step 2 — Requires identity-platform approval (Pattern A — wrong configmap):
+  Restore correct issuer config:
+    kubectl patch configmap auth-config -n prod \
+    --patch '{"data":{"ISSUER_URL":"https://issuer.prod"}}'
+    kubectl rollout restart deployment/auth-service -n prod
+
+Step 3 — Requires release-manager approval (Pattern B — key rotation issue):
+  Coordinate key rotation rollback with identity provider team
+  Temporarily pin kid in auth-service config while new keys propagate:
+    kubectl set env deployment/auth-service JWK_CACHE_TTL_SECONDS=30 -n prod
+
+Step 4 — Validate fix:
+  curl -H "Authorization: Bearer <valid-prod-token>" \
+  https://api.prod.internal/api/orders
+  Expect: status=200, not 401
+
+VALIDATION
+----------
+✅ auth-service 401 rate drops back to baseline (< 0.05% of requests)
+✅ order-api 401/403 spike resolved
+✅ JWT validation logs show "issuer match" not "mismatch"
+✅ JWK cache refresh confirms correct kid in use
+
+SAFETY RULES
+------------
+❌ Do NOT disable auth validation globally — even for 1 minute
+❌ Do NOT roll out RBAC changes without identity-platform review
+✅ Always test with a known-good prod token before declaring resolution
+✅ Capture failing token kid values as evidence before restarting auth-service
+
+ESCALATION
+----------
+0-5 min:  On-call SRE + identity-platform on-call
+5-15 min: Security lead notified (auth incidents are security-adjacent)
+15+ min:  CISO notification if customer data access impacted

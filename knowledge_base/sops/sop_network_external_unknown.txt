@@ -1,0 +1,170 @@
+SOP: Network Connectivity and DNS Instability
+=============================================
+Stack: nginx-gateway / payment-api / auth-service | GKE us-east-1 | env=prod
+Category: Network | Severity: P2 | Owner: Platform Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=nginx or app: "connection reset by peer", "connection refused", "DNS failure"
+- TLS handshake timeout in nginx-gateway or auth-service logs
+- Intermittent 502 on nginx-gateway across multiple endpoints simultaneously
+- kube-dns pod restarts or CoreDNS errors in kube-system namespace
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Check if issue is DNS or TCP:
+   kubectl exec -it payment-api-<pod> -n prod -- \
+   nslookup postgres-primary.prod.svc.cluster.local
+   kubectl exec -it payment-api-<pod> -n prod -- \
+   curl -v http://auth-service.prod.svc/health 2>&1 | head -20
+
+2. Check CoreDNS health:
+   kubectl get pods -n kube-system | grep coredns
+   kubectl logs -l app=coredns -n kube-system --since=10m | grep -i "error\|refused"
+
+3. Check for network policy changes:
+   kubectl get networkpolicies -n prod
+   kubectl describe networkpolicy -n prod | grep -A10 "Ingress\|Egress"
+
+4. Check node network health:
+   kubectl get nodes -o wide
+   kubectl describe node ip-10-0-1-12 | grep -A5 "Conditions"
+
+REMEDIATION
+-----------
+Step 1 (no approval): Restart CoreDNS if DNS is the issue:
+  kubectl rollout restart deployment/coredns -n kube-system
+
+Step 2 (SRE approval): If network policy was recently changed, revert:
+  kubectl apply -f infra/k8s/network-policies/prod-baseline.yaml
+
+Step 3 (infra approval): If node-level networking issue:
+  kubectl cordon ip-10-0-1-12
+  kubectl drain ip-10-0-1-12 --ignore-daemonsets --delete-emptydir-data
+
+VALIDATION
+----------
+✅ nslookup resolves all internal services successfully
+✅ Service-to-service curl returns 200 within 500ms
+✅ nginx-gateway 502 rate returns to 0
+✅ CoreDNS pods all Running, no error logs
+
+SAFETY RULES
+------------
+❌ Do NOT drain nodes during peak traffic without scaling replacements first
+❌ Do NOT apply new network policies without testing in staging
+✅ Always confirm DNS resolution before assuming TCP-level issue
+
+ESCALATION
+----------
+0-5 min: On-call SRE
+5-15 min: Platform team + cloud provider support if VPC-level issue
+
+---
+
+SOP: External Dependency Degradation
+=====================================
+Stack: market-data-consumer / payment-api | GKE us-east-1 | env=prod
+Category: External dependency | Severity: P2 | Owner: Vendor Management Team
+
+TRIGGER CONDITIONS
+------------------
+- logger=app: "vendor", "provider 5xx", "429 Too Many Requests", "Retry-After", "feed delayed"
+- market-data-consumer receiving 429 from external price feed provider
+- payment-api receiving 5xx from external payment processor (e.g. Stripe, Adyen)
+- External API error rate > 5% sustained for > 3 minutes
+
+IMMEDIATE TRIAGE (0-5 minutes)
+--------------------------------
+1. Check provider status page (bookmark these):
+   - Price feed provider: https://status.pricefeed.example.com
+   - Payment processor: https://status.stripe.com
+   - Confirm whether it is a known provider incident
+
+2. Check retry-after headers being received:
+   kubectl logs -l app=market-data-consumer -n prod --since=10m | grep "Retry-After\|429"
+
+3. Check if retries are amplifying the outage:
+   kubectl logs -l app=market-data-consumer -n prod --since=5m | grep "retry" | wc -l
+   If > 100/min, retry storm is making the provider outage worse
+
+REMEDIATION
+-----------
+Step 1 (no approval): Enable graceful degradation — serve stale data:
+  kubectl set env deployment/market-data-consumer STALE_DATA_FALLBACK=true -n prod
+
+Step 2 (SRE approval): Implement exponential backoff if not already active:
+  kubectl set env deployment/market-data-consumer RETRY_BACKOFF_BASE_MS=5000 -n prod
+  kubectl set env deployment/market-data-consumer RETRY_MAX_ATTEMPTS=3 -n prod
+
+Step 3 (vendor-management): Escalate to provider:
+  Open vendor support ticket with error rate, timestamps, and region
+  Reference SLA terms in vendor contract
+
+VALIDATION
+----------
+✅ Provider status page shows resolved
+✅ 429 / 5xx rate from provider drops below 1%
+✅ market-data-consumer lag decreasing
+✅ Retry rate normalises
+
+SAFETY RULES
+------------
+❌ Do NOT retry at full rate during provider outage — it makes recovery slower
+✅ Always check provider status page before internal investigation
+✅ Document retry storm evidence for SLA credit claim
+
+ESCALATION
+----------
+0-5 min: On-call SRE enables degradation mode
+5-15 min: Vendor management opens provider ticket
+15+ min: Engineering manager if customer-facing data freshness SLA at risk
+
+---
+
+SOP: Unknown Incident — Insufficient Evidence Triage
+=====================================================
+Stack: All services | GKE us-east-1 | env=prod
+Category: Unknown | Severity: P3 | Owner: SRE Team
+
+TRIGGER CONDITIONS
+------------------
+- logger contains "missing correlation", "incomplete trace", "redacted stack", "unexpected state"
+- Signals detected but no clear category match from signal rules
+- Multiple low-weight signals across unrelated services with no common trace_id
+
+IMMEDIATE TRIAGE
+----------------
+1. Collect all trace_ids from the incident window:
+   kubectl logs -l environment=prod -n prod --since=30m | \
+   grep -oP '"trace_id":"\K[^"]+' | sort | uniq -c | sort -rn | head -20
+
+2. Find the service with the highest error concentration:
+   kubectl logs -l environment=prod -n prod --since=30m | \
+   grep '"level":"ERROR"' | grep -oP '"service":"\K[^"]+' | sort | uniq -c | sort -rn
+
+3. Check for recent deployments across all services:
+   kubectl rollout history deployment -n prod 2>/dev/null | grep -v "REVISION\|^$"
+
+4. Ask service owners in #devops-incidents for recent changes not captured in deploy-controller
+
+REMEDIATION
+-----------
+Step 1: Open an investigation ticket in JIRA — do NOT execute disruptive remediation
+Step 2: Increase logging temporarily to capture more context:
+  kubectl set env deployment/<suspect-service> LOG_LEVEL=DEBUG -n prod
+  ⚠️ Revert within 30 minutes — DEBUG logging can cause disk pressure (see sop_disk_storage_pressure.txt)
+Step 3: Preserve all evidence — pod logs, pg_stat_activity snapshots, Kafka lag metrics
+Step 4: Update hypothesis in JIRA ticket as evidence accumulates
+
+VALIDATION
+----------
+✅ Root cause hypothesis documented with supporting evidence
+✅ No disruptive actions taken without clear evidence
+✅ Additional telemetry collected for next occurrence
+
+SAFETY RULES
+------------
+❌ Do NOT execute rollback or restart without clear evidence linking it to the incident
+✅ Declare uncertainty explicitly in #devops-incidents channel
+✅ Prefer investigation over disruptive action when evidence is weak
