@@ -35,7 +35,7 @@ JIRA_PROJECT_KEY=OPS
 
 ## 4. Triggering deploys
 
-- Push to `main` with changes to `app.py`, `src/`, `deploy/hf-space/`, or the workflow file.
+- Push to the GitHub `deploy` branch with changes to `app.py`, `requirements.txt`, `src/`, `deploy/hf-space/`, or the workflow file.
 - Or trigger the workflow manually from the GitHub Actions tab.
 
 ## 5. Local bundle preview
@@ -53,3 +53,5 @@ The generated bundle will be written to:
 ```
 
 The deploy bundle intentionally uses the root app and requirements files so the Hugging Face Space receives the same UI and dependency changes that are committed to the main repo.
+
+The prebuilt FAISS index under `src/rag/faiss_index/` is intentionally excluded from the Space bundle because Hugging Face rejects binary files unless Xet storage is configured. Runtime RAG still receives the text knowledge base under `src/rag/knowledge_base/`.

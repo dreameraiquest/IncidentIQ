@@ -11,7 +11,7 @@ on:
       - ".github/workflows/deploy-hf-space.yml"
   push:
     branches:
-      - main
+      - deploy
     paths:
       - "app.py"
       - "requirements.txt"

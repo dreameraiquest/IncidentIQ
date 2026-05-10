@@ -24,6 +24,9 @@ def copy_tree(src: Path, dest: Path) -> None:
             "__pycache__",
             "*.pyc",
             ".DS_Store",
+            "faiss_index",
+            "*.faiss",
+            "*.pkl",
         ),
     )
 
