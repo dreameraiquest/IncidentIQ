@@ -240,14 +240,15 @@ Recommended graph:
 ```text
 START
   -> ingest_logs
-  -> normalize_events
+  -> extract_inputs
+  -> parse_raw_files
   -> extract_signals
   -> cluster_evidence
+  -> retrieve_runbooks
   -> classify_incident
   -> build_timeline
   -> analyze_symptom_vs_cause
   -> generate_rca
-  -> retrieve_runbooks
   -> recommend_remediation
   -> critic_review
   -> human_approval_gate

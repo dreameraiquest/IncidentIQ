@@ -178,10 +178,22 @@ class AnalysisResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
 
 
+class ExtractionResult(BaseModel):
+    input_root: str
+    copied_files: List[str] = Field(default_factory=list)
+    extracted_files: List[str] = Field(default_factory=list)
+    raw_files: List[str] = Field(default_factory=list)
+    ground_truth_files: List[str] = Field(default_factory=list)
+    skipped_files: List[str] = Field(default_factory=list)
+
+
 class GraphState(BaseModel):
     run_id: str
     input_paths: List[str] = Field(default_factory=list)
     runtime_root: str = ""
+    copied_files: List[str] = Field(default_factory=list)
+    extracted_files: List[str] = Field(default_factory=list)
+    skipped_files: List[str] = Field(default_factory=list)
     raw_files: List[str] = Field(default_factory=list)
     ground_truth_files: List[str] = Field(default_factory=list)
     events: List[LogEvent] = Field(default_factory=list)
@@ -193,6 +205,7 @@ class GraphState(BaseModel):
     eval_summary: Optional[Dict[str, Any]] = None
     exports: Dict[str, str] = Field(default_factory=dict)
     errors: List[str] = Field(default_factory=list)
+    graph_steps: List[str] = Field(default_factory=list)
 
 
 def model_to_dict(obj: Any) -> Dict[str, Any]:
@@ -252,29 +265,52 @@ def safe_extract_zip(zip_path: Path, dest_root: Path) -> List[Path]:
     return extracted
 
 
-def prepare_inputs(uploaded_paths: List[str], run_root: Path) -> Tuple[List[Path], List[Path]]:
+def extract_inputs(uploaded_paths: List[str], run_root: Path) -> ExtractionResult:
     input_root = run_root / "input"
     input_root.mkdir(parents=True, exist_ok=True)
-    all_files = []
+    all_files: List[Path] = []
+    copied_files: List[Path] = []
+    extracted_files: List[Path] = []
     for raw in uploaded_paths:
         src = Path(raw)
         if src.suffix.lower() == ".zip":
-            all_files.extend(safe_extract_zip(src, input_root / src.stem))
+            extracted = safe_extract_zip(src, input_root / src.stem)
+            extracted_files.extend(extracted)
+            all_files.extend(extracted)
         else:
             dst = input_root / src.name
             shutil.copy2(src, dst)
+            copied_files.append(dst)
             all_files.append(dst)
 
-    raw_files, gt_files = [], []
+    raw_files, gt_files, skipped_files = [], [], []
     for path in all_files:
         low = str(path).lower().replace("\\", "/")
         if "ground_truth_eval_only" in low:
             if path.suffix.lower() in {".json", ".csv"}:
                 gt_files.append(path)
+            else:
+                skipped_files.append(path)
         elif path.suffix.lower() in ALLOWED_SUFFIXES - {".zip"}:
             if "raw_logs" in low or path.suffix.lower() in {".jsonl", ".log", ".txt"}:
                 raw_files.append(path)
-    return sorted(raw_files), sorted(gt_files)
+            else:
+                skipped_files.append(path)
+        else:
+            skipped_files.append(path)
+    return ExtractionResult(
+        input_root=str(input_root),
+        copied_files=[str(path) for path in sorted(copied_files)],
+        extracted_files=[str(path) for path in sorted(extracted_files)],
+        raw_files=[str(path) for path in sorted(raw_files)],
+        ground_truth_files=[str(path) for path in sorted(gt_files)],
+        skipped_files=[str(path) for path in sorted(skipped_files)],
+    )
+
+
+def prepare_inputs(uploaded_paths: List[str], run_root: Path) -> Tuple[List[Path], List[Path]]:
+    extracted = extract_inputs(uploaded_paths, run_root)
+    return [Path(path) for path in extracted.raw_files], [Path(path) for path in extracted.ground_truth_files]
 
 
 def parse_timestamp(value: Any) -> Optional[str]:
@@ -815,12 +851,16 @@ def export_results(output_root: Path, state: GraphState) -> Dict[str, str]:
     payload = {
         "run_id": state.run_id,
         "summary": {
+            "copied_files": len(state.copied_files),
+            "extracted_files": len(state.extracted_files),
             "raw_files": len(state.raw_files),
             "events_parsed": len(state.events),
             "signals_found": len(state.signals),
             "clusters_found": len(state.clusters),
             "incidents_found": len(state.incidents),
             "ground_truth_files_detected_but_not_used_by_runtime": len(state.ground_truth_files),
+            "skipped_files": len(state.skipped_files),
+            "graph_steps": state.graph_steps,
             "errors": state.errors,
         },
         "clusters": [model_to_dict(c) for c in state.clusters],
@@ -902,16 +942,9 @@ def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
     output_root.mkdir(parents=True, exist_ok=True)
     state = GraphState(run_id=request.run_id, input_paths=request.uploaded_paths, runtime_root=str(run_root))
     try:
-        raw_files, gt_files = prepare_inputs(request.uploaded_paths, run_root)
-        state.raw_files = [str(path) for path in raw_files]
-        state.ground_truth_files = [str(path) for path in gt_files]
-        state.events = parse_raw_files(raw_files, run_root)
-        state.signals = extract_signals(state.events)
-        state.clusters = build_evidence_clusters(state.signals, options)
-        state.rag_context = retrieve_runbook_context(state.clusters, options)
-        state.incidents, state.action_payloads = run_incident_agents(state.run_id, state.clusters, state.rag_context)
-        state.eval_summary = score_evals(state.incidents, gt_files) if options.get("run_evals", True) else {"enabled": False, "summary": None, "note": "Eval disabled by options."}
-        state.exports = export_results(output_root, state)
+        from src.graph import IncidentGraphRunner
+
+        state = IncidentGraphRunner(options=options, run_root=run_root, output_root=output_root).run(state)
         status = "completed"
     except Exception as exc:
         state.errors.append(str(exc))
@@ -924,12 +957,16 @@ def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
         status=status,
         highest_severity=highest,
         summary={
+            "copied_files": len(state.copied_files),
+            "extracted_files": len(state.extracted_files),
             "raw_files": len(state.raw_files),
             "events_parsed": len(state.events),
             "signals_found": len(state.signals),
             "clusters_found": len(state.clusters),
             "incidents_found": len(state.incidents),
             "ground_truth_files_detected_but_not_used_by_runtime": len(state.ground_truth_files),
+            "skipped_files": len(state.skipped_files),
+            "graph_steps": state.graph_steps,
             "errors": state.errors,
         },
         incidents=state.incidents,

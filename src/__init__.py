@@ -1,6 +1,7 @@
 from .pipeline import (
     AnalysisRequest,
     AnalysisResponse,
+    ExtractionResult,
     analyze_uploaded_logs,
     response_to_markdown,
     run_analysis,
@@ -9,6 +10,7 @@ from .pipeline import (
 __all__ = [
     "AnalysisRequest",
     "AnalysisResponse",
+    "ExtractionResult",
     "analyze_uploaded_logs",
     "response_to_markdown",
     "run_analysis",
