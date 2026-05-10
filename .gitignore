@@ -9,6 +9,7 @@ __pycache__/
 # IncidentIQ Work Data
 incidentiq_work/
 runs/
+.hf-space-build/
 *.log
 *.zip
 

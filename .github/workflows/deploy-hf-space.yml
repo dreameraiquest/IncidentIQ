@@ -1,0 +1,72 @@
+name: Build And Deploy Hugging Face Space
+
+on:
+  pull_request:
+    paths:
+      - "app.py"
+      - "src/**"
+      - "deploy/hf-space/**"
+      - "scripts/build_hf_space_bundle.py"
+      - ".github/workflows/deploy-hf-space.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "app.py"
+      - "src/**"
+      - "deploy/hf-space/**"
+      - "scripts/build_hf_space_bundle.py"
+      - ".github/workflows/deploy-hf-space.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assemble Space bundle
+        run: python scripts/build_hf_space_bundle.py
+
+      - name: Install Space dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .hf-space-build/requirements.txt
+
+      - name: Smoke test Space app import
+        run: |
+          cd .hf-space-build
+          python -c "from app import demo; print(type(demo).__name__)"
+
+      - name: Validate deploy configuration
+        if: github.event_name != 'pull_request'
+        env:
+          HF_SPACE_REPO_ID: ${{ vars.HF_SPACE_REPO_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          test -n "$HF_SPACE_REPO_ID" || { echo "Missing GitHub variable HF_SPACE_REPO_ID"; exit 1; }
+          test -n "$HF_TOKEN" || { echo "Missing GitHub secret HF_TOKEN"; exit 1; }
+
+      - name: Push bundle to Hugging Face Space
+        if: github.event_name != 'pull_request'
+        env:
+          HF_SPACE_REPO_ID: ${{ vars.HF_SPACE_REPO_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd .hf-space-build
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git remote add origin "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO_ID}"
+          git push --force origin HEAD:main
