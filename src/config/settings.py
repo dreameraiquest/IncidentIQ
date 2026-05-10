@@ -7,7 +7,7 @@ load_dotenv()
 WORK_ROOT = Path(
     os.getenv(
         "INCIDENTIQ_WORK_ROOT",
-        "/Users/bhavnarathi/Desktop/IncidentIQ/incidentiq_work"
+        "/content/incidentiq_work" if Path("/content").exists() else "/tmp/incidentiq_work"
     )
 )
 WORK_ROOT.mkdir(parents=True, exist_ok=True)

@@ -27,6 +27,8 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      INCIDENTIQ_WORK_ROOT: /tmp/incidentiq_work
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
