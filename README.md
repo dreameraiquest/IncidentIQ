@@ -1,4 +1,4 @@
-<p align="center"> # **IncidentIQ** 🚨 <p align="center">
+# **IncidentIQ** 🚨
 ## Multi-Agent AI Platform for DevOps Incident Detection, RCA & Automated Response
 
 IncidentIQ is a production-inspired **multi-agent DevOps incident intelligence platform** that transforms noisy operational logs into:
