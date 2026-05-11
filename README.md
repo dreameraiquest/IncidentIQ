@@ -306,6 +306,8 @@ sequenceDiagram
 - RAG pipelines
 - FAISS vector search
 - HuggingFace embeddings
+- n8n
+- Integration with JIRA, Slack
 
 ## Backend
 
