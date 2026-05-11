@@ -20,6 +20,14 @@ Built using **LangGraph**, **LLMs**, **RAG pipelines**, and **deterministic evid
 
 ---
 
+<img width="1911" height="1072" alt="image" src="https://github.com/user-attachments/assets/45d04f01-27b5-47d9-92d3-6a480c9aaed3" />
+
+---
+
+<img width="1904" height="1062" alt="image" src="https://github.com/user-attachments/assets/84e5fc68-7f06-4160-8572-ebde67a850a7" />
+
+---
+
 # 🧠 What Makes IncidentIQ Different?
 
 Unlike toy AI demos or simple keyword classifiers, IncidentIQ:
