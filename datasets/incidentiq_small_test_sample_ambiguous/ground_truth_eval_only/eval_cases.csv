@@ -1,5 +1,0 @@
-case_id,raw_file,expected_category,expected_severity,affected_services,note
-AMBIG_DB_WITH_API_SYMPTOM,raw_logs/ambiguous_mixed_window_01.jsonl,Database,P1,payment-api|postgres-primary|nginx-gateway,raw logs contain no labels; use this only for offline eval
-AMBIG_DEPLOY_CANARY,raw_logs/ambiguous_mixed_window_01.jsonl,Deployment regression,P2,deploy-controller|payment-api,raw logs contain no labels; use this only for offline eval
-AMBIG_EXTERNAL_VENDOR,raw_logs/ambiguous_mixed_window_02.jsonl,External dependency,P2,pricing-service|vendor-feed-adapter,raw logs contain no labels; use this only for offline eval
-AMBIG_UNKNOWN_INCOMPLETE,raw_logs/ambiguous_mixed_window_02.jsonl,Unknown,P3,audit-service,raw logs contain no labels; use this only for offline eval
