@@ -1,8 +1,6 @@
 # IncidentIQ 🚨
 ## Multi-Agent AI Platform for DevOps Incident Detection, RCA & Automated Response
 
-> **AI-Powered Incident Commander for DevOps, SRE & Platform Engineering Teams**
-
 IncidentIQ is a production-inspired **multi-agent DevOps incident intelligence platform** that transforms noisy operational logs into:
 
 - Incident detection
