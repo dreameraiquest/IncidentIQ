@@ -23,13 +23,15 @@ Built using **LangGraph**, **LLMs**, **RAG pipelines**, and **deterministic evid
 **Instructions to experience IncidentIQ**
 
 1) Go to our hosted Huggingface space...
-   https://huggingface.co/spaces/vikrant1011/IncidentIQ
-   
-2) Pick up sample raw log datasets from our github repo from the following folder...
-    https://github.com/dreameraiquest/IncidentIQ/blob/main/datasets
-       e.g. - https://github.com/dreameraiquest/IncidentIQ/blob/main/datasets/incidentiq_small_test_sample_easy.zip
 
-3) Upload these sample log zips and click on "Run Analysis -> notify" button for extracting the "Actionable Outputs".
+      https://huggingface.co/spaces/vikrant1011/IncidentIQ
+   
+3) Pick up sample raw log datasets from our github repo from the following folder...
+    https://github.com/dreameraiquest/IncidentIQ/blob/main/datasets
+    https://github.com/dreameraiquest/IncidentIQ/blob/main/datasets/incidentiq_small_test_sample_easy.zip
+
+4) Upload these sample log zips and click on "Run Analysis -> notify" button for extracting the "Actionable Outputs".
+   
 
 <img width="1911" height="1072" alt="image" src="https://github.com/user-attachments/assets/45d04f01-27b5-47d9-92d3-6a480c9aaed3" />
 
