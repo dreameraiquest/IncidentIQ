@@ -19,6 +19,7 @@ from src.reporting.markdown_report import response_to_markdown
 from src.models.incident import IncidentResult
 from src.integrations.n8n import notify_all_incidents
 from src.evals.evaluator import evaluate_all, WEIGHTS, AXIS_LABELS, DEFAULT_GROUND_TRUTH
+from src.evals.demo_ground_truth import load_demo_ground_truth_easy
 
 APP_TITLE   = "IncidentIQ"
 APP_SUBTITLE = "Multi-Agent AI Platform · DevOps Incident Analysis · LLM-as-Judge Evals"
@@ -421,7 +422,13 @@ def process_logs(files, demo_mode):
                '<div style="color:#a78bfa;padding:20px;font-family:\'JetBrains Mono\',monospace;font-size:12px;">▶ Calling OpenRouter judge…</div>')
 
         # Pass None → evaluator uses DEFAULT_GROUND_TRUTH (covers all categories)
-        eval_result = evaluate_all(incidents_raw, ground_truth=None)
+        # eval_result = evaluate_all(incidents_raw, ground_truth=None)
+        demo_ground_truth = load_demo_ground_truth_easy()
+
+        eval_result = evaluate_all(
+            incidents_raw,
+            ground_truth=demo_ground_truth,
+        )
         eval_html   = _eval_html(eval_result)
 
         # Step 10: export
