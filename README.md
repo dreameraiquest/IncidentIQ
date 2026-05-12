@@ -40,6 +40,10 @@ Built using **LangGraph**, **LLMs**, **RAG pipelines**, and **deterministic evid
 
 ---
 
+<img width="2436" height="1616" alt="IncidentIQ - LLM As Judge" src="https://github.com/user-attachments/assets/7e8eb33d-8bcf-4679-8540-2ae8e11e3fb8" />
+
+---
+
 # 🧠 What Makes IncidentIQ Different?
 
 Unlike toy AI demos or simple keyword classifiers, IncidentIQ:
